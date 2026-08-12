@@ -1,11 +1,16 @@
+import logging
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures.process import BrokenProcessPool
 
 import pandas as pd
 import polars as pl
 import enum
 from dataclasses import dataclass, field
 from source.extraneous_delays.event_log import DEFAULT_CSV_IDS, EventLogIDs
+
+log = logging.getLogger(__name__)
+
 
 class ReEstimationMethod(enum.Enum):
     SET_INSTANT = 1
@@ -175,21 +180,40 @@ class ConcurrencyOracle:
             event_log[self.log_ids.enabling_activity] = None
         # Initialize lists to write all enabled times in the log at once
         indexes, enabled_times, enabling_activities = [], [], []
-        # Parallelize enabling information extraction by trace
-        with ProcessPoolExecutor() as executor:
-            # For each trace in the log, estimate the enabled time/activity of its events
-            handles = [
-                executor.submit(
-                    self._get_enabling_info_of_trace,
+        traces = [trace for _, trace in event_log.groupby(self.log_ids.case)]
+        # Parallelize enabling information extraction by trace. ProcessPoolExecutor has been
+        # observed to crash with BrokenProcessPool on some Windows setups (worker terminated
+        # abruptly with no further detail) — rather than let that take down a multi-hour
+        # simulation run, fall back to sequential execution, which is always correct, just slower.
+        try:
+            with ProcessPoolExecutor() as executor:
+                handles = [
+                    executor.submit(
+                        self._get_enabling_info_of_trace,
+                        trace=trace,
+                        log_ids=self.log_ids,
+                        set_nat_to_first_event=set_nat_to_first_event,
+                    )
+                    for trace in traces
+                ]
+                for handle in handles:
+                    indexes_, enabled_times_, enabling_activities_ = handle.result()
+                    indexes += indexes_
+                    enabled_times += enabled_times_
+                    enabling_activities += enabling_activities_
+        except BrokenProcessPool:
+            log.warning(
+                "ProcessPoolExecutor crashed while computing enabled times (%d traces); "
+                "falling back to sequential execution.",
+                len(traces),
+            )
+            indexes, enabled_times, enabling_activities = [], [], []
+            for trace in traces:
+                indexes_, enabled_times_, enabling_activities_ = self._get_enabling_info_of_trace(
                     trace=trace,
                     log_ids=self.log_ids,
                     set_nat_to_first_event=set_nat_to_first_event,
                 )
-                for _, trace in event_log.groupby(self.log_ids.case)
-            ]
-            # Recover all results
-            for handle in handles:
-                indexes_, enabled_times_, enabling_activities_ = handle.result()
                 indexes += indexes_
                 enabled_times += enabled_times_
                 enabling_activities += enabling_activities_

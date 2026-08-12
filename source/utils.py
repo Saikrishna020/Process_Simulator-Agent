@@ -4,10 +4,7 @@ import scipy.stats as st
 
 def store_preprocessed_data(df_train, df_test, df_val, data_dir):
     print(data_dir)
-    os.system(f"mkdir {data_dir}")
-    if not os.path.exists(data_dir):
-    # If it doesn't exist, create the directory
-        os.makedirs(data_dir)
+    os.makedirs(data_dir, exist_ok=True)
 
     path_to_train_file = os.path.join(data_dir,"train_preprocessed.csv")
     df_train_without_end_activity = df_train.copy()
