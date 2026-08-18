@@ -27,3 +27,5 @@ Aa, and Heiner Stuckenschmidt. The chat agent, guardrails, and web app layer (`w
 built on top of that engine.
 
 MIT licensed — see [LICENSE](LICENSE).
+
+<!-- test: verifying PR review bot webhook delivery, safe to ignore -->
