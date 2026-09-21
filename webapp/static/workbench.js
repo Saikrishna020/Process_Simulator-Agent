@@ -5,7 +5,7 @@ const fmt = (n, digits = 1) => Number(n).toLocaleString(undefined, {maximumFract
 const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const state = {model: null, selected: null, changes: {}, clones: [], activities: {}, result: null, job: null, view: 'resources'};
 const fields = ['scenario-name', 'horizon', 'repetitions', 'demand', 'sla', 'routing', 'seed'];
-const titles = {resources: ['Resource profiles', 'Your process, understood.', 'Explore resource behavior learned from historical work.'], scenario: ['Scenario builder', 'What would you change?', 'Build an alternative. Keep the historical baseline intact.'], results: ['Results', 'See what changes.', 'Compare outcomes across paired simulation repetitions.'], history: ['Experiment history', 'A record of your experiments.', 'Return to a result, reuse its settings, or export the event logs.']};
+const titles = {resources: ['Resource profiles', 'Your process, understood.', 'Explore resource behavior learned from historical work.'], explore: ['Data explorer', 'What the history says.', 'How the work, the waiting and the people look in the historical log, before any simulation.'], scenario: ['Scenario builder', 'What would you change?', 'Build an alternative. Keep the historical baseline intact.'], results: ['Results', 'See what changes.', 'Compare outcomes across paired simulation repetitions.'], history: ['Experiment history', 'A record of your experiments.', 'Return to a result, reuse its settings, or export the event logs.']};
 function remember(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch {} }
 function recall(key) { try { return JSON.parse(localStorage.getItem(key)); } catch { return null; } }
 function notice(message = '') { $('notice').textContent = message; $('notice').hidden = !message; }
@@ -27,6 +27,7 @@ function navigate(view) {
   const [crumb, title, subtitle] = titles[view];
   $('breadcrumb').textContent = crumb; $('page-title').textContent = title; $('page-subtitle').textContent = subtitle;
   if (view === 'history') safe(renderHistory)();
+  if (view === 'explore') renderExplorer();
 }
 function saveDraft() {
   if (state.model) remember('process-lab-draft', {model_id: state.model.model_id, changes: state.changes, clones: state.clones, activities: state.activities, fields: Object.fromEntries(fields.map(f => [f, $(f).value]))});
@@ -161,6 +162,23 @@ const metricCards = [
   ['sla_met_pct','Cases meeting the deadline','%',true], ['backlog_at_horizon','Unfinished cases at horizon','cases',false]
 ];
 async function showResult(id) { state.result = await api('/experiments/' + id); renderResults(); navigate('results'); }
+const tone = value => Math.abs(value) < 10 ? 'ok' : Math.abs(value) < 25 ? 'warn' : 'bad';
+const diff = value => value === null || value === undefined ? '' : `<span class="diff ${tone(value)}">${value > 0 ? '+' : ''}${fmt(value, 0)}%</span>`;
+function renderValidation(r) {
+  const v = r.validation;
+  if (!v) return `<div class="result-note"><strong>Baseline fidelity check:</strong> simulated median case duration ${fmt(r.comparison.metrics.median_cycle_hours.baseline.mean)} h; held-out historical median ${fmt(r.historical_cycle_hours.median)} h. Learn the dataset again for a detailed validation.</div>`;
+  const rows = list => list.map(row => `<tr><td>${esc(row.label)}</td><td>${fmt(row.real)}</td><td>${fmt(row.simulated)}</td><td>${diff(row.difference_pct)}</td></tr>`).join('');
+  const scope = v.censoring_controlled
+    ? `Compared with ${fmt(v.cases, 0)} of ${fmt(v.all_test_cases, 0)} held-out cases that had at least ${fmt(v.follow_up_days)} days to finish. The historical log ends on a fixed date, so cases arriving later are cut short and would look unrealistically fast (all held-out cases would show a mean of ${fmt(v.all_test_cycle_hours.mean)} h).`
+    : `<strong>Not corrected:</strong> too little history remains after the split to leave out cut-short cases, so real durations may look too fast.`;
+  return `<section class="card padded validation"><p class="eyebrow">HOW WELL DOES THE BASELINE MATCH HISTORY?</p><h2>Simulated baseline vs. real held-out cases</h2>
+    <p class="subtle">${scope} Simulated over ${v.horizon_days} arrival days, averaged over ${r.baseline_runs.length} repetitions. Green is within 10%, amber within 25%.</p>
+    <div class="table-wrap"><table><thead><tr><th>Measure</th><th>Real</th><th>Simulated</th><th>Difference</th></tr></thead><tbody>${rows(v.cycle)}${rows(v.flow)}</tbody></table></div>
+    <h3>Idle time before each task (hours)</h3><p class="subtle">Time between a case's previous task ending and this task starting, in the log and in the simulation. Large gaps show where the model is wrong.</p>
+    <div class="table-wrap"><table><thead><tr><th>Activity</th><th>Tasks</th><th>Real median</th><th>Sim median</th><th>Real mean</th><th>Sim mean</th><th>Mean diff.</th></tr></thead><tbody>${v.activities.map(a => `<tr><td>${esc(a.name.replace(/^W_/, ''))}</td><td>${fmt(a.events, 0)}</td><td>${fmt(a.real_median)}</td><td>${fmt(a.simulated_median)}</td><td>${fmt(a.real_mean)}</td><td>${fmt(a.simulated_mean)}</td><td>${diff(a.mean_difference_pct)}</td></tr>`).join('')}</tbody></table></div>
+    <h3>Who holds the simulated queues</h3><p class="subtle">If a few people hold most of the queueing while their observed load is modest, a few unusually long recorded tasks are probably blocking them in the simulation.</p>
+    <div class="table-wrap"><table><thead><tr><th>Resource</th><th>Queue hours</th><th>Share of all queueing</th><th>Observed load in history</th></tr></thead><tbody>${v.queue_resources.map(q => `<tr><td>${esc(q.name)}</td><td>${fmt(q.queue_hours, 0)}</td><td>${fmt(q.share_pct, 0)}%</td><td>${fmt(q.observed_load_pct)}%</td></tr>`).join('')}</tbody></table></div></section>`;
+}
 function renderResults() {
   const r = state.result, comparison = r.comparison;
   const m = comparison.metrics;
@@ -178,7 +196,7 @@ function renderResults() {
     <div class="legend"><span><i></i>Historical baseline</span><span><i class="green"></i>Your scenario</span></div><div class="result-cards">${cards}</div>
     <div class="result-note">${fmt(m.active_resources.baseline.mean,0)} → ${fmt(m.active_resources.scenario.mean,0)} active resources. ${fmt(m.arrived_cases.baseline.mean,0)} → ${fmt(m.arrived_cases.scenario.mean,0)} arrivals on average. Durations and deadline compliance include every arrived case, including those finishing after the horizon. Utilization and throughput cover only the selected horizon. Ranges show repetition variability, not confidence intervals.</div>
     <div class="results-grid"><section class="card padded"><h2>Where cases wait</h2><p class="subtle">Mean queue and calendar wait per activity instance, in hours.</p>${bars}</section><section class="card"><div class="padded"><h2>Resource utilization</h2><p class="subtle">Working time occupied ÷ scheduled capacity within the horizon.</p></div><div class="table-wrap" style="max-height:450px;overflow:auto"><table><thead><tr><th>Resource</th><th>Baseline</th><th>Scenario</th></tr></thead><tbody>${resourceRows}</tbody></table></div></section></div>
-    <div class="result-note"><strong>Baseline fidelity check:</strong> simulated median case duration ${fmt(m.median_cycle_hours.baseline.mean)} h; held-out historical median ${fmt(r.historical_cycle_hours.median)} h. These use different sampled arrival horizons. A large gap is a reason to refine the model before interpreting staffing effects; it is not a calibrated forecast.</div>
+    ${renderValidation(r)}
     <details class="result-details"><summary>All metrics & paired differences</summary><div class="table-wrap"><table><thead><tr><th>Metric</th><th>Baseline mean</th><th>Scenario mean</th><th>Paired difference range</th></tr></thead><tbody>${Object.entries(m).map(([k,v])=>`<tr><td>${esc(k.replaceAll('_',' '))}</td><td>${fmt(v.baseline.mean)}</td><td>${fmt(v.scenario.mean)}</td><td>${fmt(v.delta.min)} to ${fmt(v.delta.max)}</td></tr>`).join('')}</tbody></table></div></details>
     <section class="card padded" style="margin-top:22px"><h3>Take the results with you</h3><p class="subtle">Every repetition has separate event logs. The JSON includes all settings, seeds, model identity and assumptions.</p><div class="download-row"><a href="/api/workbench/experiments/${r.id}/files/result.json" download>↓ Full comparison JSON</a><label><span class="subtle">Repetition </span><select id="export-repetition" aria-label="Export repetition">${Array.from({length:r.request.repetitions},(_,i)=>`<option value="${i+1}">${i+1}</option>`).join('')}</select></label><a id="baseline-download" download>↓ Baseline CSV</a><a id="scenario-download" download>↓ Scenario CSV</a></div></section>`;
   $('reuse-result').onclick = safe(() => reuse(r));
@@ -267,3 +285,40 @@ safe(async () => {
   if(running) { busy(running); poll(running.id); }
   else { remember('process-lab-job',null); const last=history.find(j=>j.kind==='experiment' && j.status==='done' && j.model_id===state.model?.model_id); if(last) { state.result=await api('/experiments/'+last.id); renderResults(); } }
 })();
+
+function renderExplorer() {
+  const box = $('explore-content'), e = state.model?.explore;
+  if (!e) { box.innerHTML = '<div class="card empty-state"><h2>Learn a dataset to explore it.</h2><p>This page describes the whole historical log: waiting, common paths, working rhythm and handovers. Learn the dataset again if this model predates the explorer.</p></div>'; return; }
+  const short = name => name.replace(/^W_/, '');
+  const shown = e.activities.filter(a => a.share >= .005), rare = e.activities.length - shown.length;
+  const maxGap = Math.max(.01, ...shown.map(a => a.mean_gap_hours));
+  const maxHour = Math.max(1, ...e.hour_of_week.flat());
+  const hourCells = e.hour_of_week.map((row, d) => `<div class="lab">${days[d]}</div>` + row.map((n, h) => `<div class="cell" style="background:rgba(32,122,89,${(n / maxHour * .95 + (n ? .05 : 0)).toFixed(3)})" title="${days[d]} ${String(h).padStart(2, '0')}:00 UTC · ${fmt(n, 0)} tasks started"></div>`).join('')).join('');
+  const hourAxis = '<div></div>' + Array.from({length: 24}, (_, h) => `<div class="lab" style="justify-content:center;padding:0">${h % 3 === 0 ? h : ''}</div>`).join('');
+  const maxMonth = Math.max(.01, ...e.months.map(m => m.median_cycle_days));
+  const names = e.handover.names;
+  const matrixHead = '<div></div>' + names.map(n => `<div class="lab col">${esc(n)}</div>`).join('');
+  const matrix = e.handover.matrix.map((row, i) => `<div class="lab">${esc(names[i])}</div>` + row.map((v, k) => `<div class="cell" style="background:rgba(32,122,89,${Math.min(1, v * 2.2).toFixed(3)})" title="${esc(names[i])} → ${esc(names[k])}: ${fmt(v * 100)}% of ${esc(names[i])}'s handoffs">${v >= .05 ? fmt(v * 100, 0) : ''}</div>`).join('')).join('');
+  const touch = e.touch_share_pct;
+  const stats = [
+    ['Cases', fmt(e.cases, 0), `${fmt(e.events, 0)} tasks · ${e.resource_count} people · ${e.activity_count} activities`],
+    ['Median case duration', `${fmt(e.cycle_days.median)} days`, `mean ${fmt(e.cycle_days.mean)} · 90th percentile ${fmt(e.cycle_days.p90)} days`],
+    ['Hands-on work per case', `${fmt(e.median_touch_minutes, 0)} min`, 'median, all tasks added up'],
+    ['Cases repeating a task', `${fmt(e.repeat_case_pct, 0)}%`, `${fmt(e.variant_count, 0)} distinct paths in ${fmt(e.cases, 0)} cases`]
+  ].map(([label, value, help]) => `<div class="stat"><span class="label">${esc(label)}</span><strong>${esc(value)}</strong><small>${esc(help)}</small></div>`).join('');
+  const variants = e.variants.map(v => { const seen = new Set(); return `<div style="margin:10px 0"><div class="chips">${v.steps.map(s => { const again = seen.has(s); seen.add(s); return `<span class="chip ${again ? 'repeat' : ''}">${esc(short(s))}</span>`; }).join('')}</div><div class="bar-line" style="grid-template-columns:1fr 110px;margin:0"><span class="track"><i class="fill" style="width:${v.share / e.variants[0].share * 100}%"></i></span><span class="val">${fmt(v.share * 100)}% · ${fmt(v.cases, 0)}</span></div></div>`; }).join('');
+  box.innerHTML = `<div class="stats-grid">${stats}</div>
+  <div class="explore-grid">
+    <section class="explore-card wide"><p class="eyebrow">WORK VS. WAITING</p><p class="big-claim">A typical case is open for <strong>${fmt(e.cycle_days.median)} days</strong> but needs only <strong>${fmt(e.median_touch_minutes, 0)} minutes</strong> of hands-on work: <strong>${fmt(touch)}%</strong> of elapsed time. The rest is waiting.</p>
+      <div class="share-bar" title="${fmt(touch)}% hands-on work"><span style="width:${Math.max(.5, touch)}%"></span></div><p class="subtle">Green: time someone was working on a case (all tasks, all cases). Empty: everything else. This is why adding people rarely changes cycle time in the simulator.</p></section>
+    <section class="explore-card"><h2>Idle time before each task</h2><p class="subtle">Average hours between the previous task ending and this one starting. Median task length on the right.</p>
+      ${shown.map(a => `<div class="bar-line"><span title="${fmt(a.events, 0)} tasks">${esc(short(a.name))}</span><span class="track"><i class="fill" style="width:${a.mean_gap_hours / maxGap * 100}%"></i></span><span class="val">${fmt(a.mean_gap_hours)} h · ${fmt(a.median_minutes)} min</span></div>`).join('')}${rare ? `<p class="subtle">${rare} rare ${rare === 1 ? 'activity' : 'activities'} (under 0.5% of tasks) not shown.</p>` : ''}</section>
+    <section class="explore-card"><h2>Most common paths</h2><p class="subtle">The top ${e.variants.length} of ${fmt(e.variant_count, 0)} distinct paths cover ${fmt(e.top_variant_coverage_pct, 0)}% of cases. Highlighted steps are repeats.</p>${variants}</section>
+    <section class="explore-card wide"><h2>When work happens</h2><p class="subtle">Tasks started per weekday and hour, in UTC. Darker means busier. This is the pattern the simulator infers working hours from.</p>
+      <div class="heat" style="grid-template-columns:34px repeat(24,minmax(14px,1fr))">${hourAxis}${hourCells}</div></section>
+    <section class="explore-card"><h2>Case duration by arrival month</h2><p class="subtle">Median days from first to last task. The latest months are cut short because the log ends on a fixed date.</p>
+      <div class="month-bars">${e.months.map(m => `<div title="${esc(m.month)}: ${fmt(m.cases, 0)} cases, median ${fmt(m.median_cycle_days)} days"><i style="height:${m.median_cycle_days / maxMonth * 130}px"></i>${esc(m.month.slice(2))}</div>`).join('')}</div></section>
+    <section class="explore-card"><h2>Who hands work to whom</h2><p class="subtle">For the ${names.length} busiest people: the share of each person's handoffs (rows) that go to each other person (columns). ${fmt(e.handover.same_resource_pct, 0)}% of all handoffs stay with the same person.</p>
+      <div class="heat matrix" style="grid-template-columns:64px repeat(${names.length},minmax(18px,1fr))">${matrixHead}${matrix}</div></section>
+  </div>`;
+}

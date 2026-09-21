@@ -12,6 +12,7 @@
   <div class="nav-label">WORKSPACE</div>
   <nav aria-label="Main navigation">
     <button class="nav-item active" data-view="resources"><span>◫</span> Resource profiles</button>
+    <button class="nav-item" data-view="explore"><span>◔</span> Data explorer</button>
     <button class="nav-item" data-view="scenario"><span>⑂</span> Scenario builder <b id="change-count">0</b></button>
     <button class="nav-item" data-view="results"><span>▥</span> Results</button>
     <button class="nav-item" data-view="history"><span>◷</span> Experiment history</button>
@@ -32,6 +33,7 @@
         <div class="section-heading"><div><h2>Resource profiles <span id="resource-count" class="count"></span></h2><p>Historical capabilities, processing times and working patterns.</p></div><input type="search" id="resource-search" placeholder="Find a resource or activity…" aria-label="Search resources"></div>
         <div class="resource-layout"><section class="card resource-list"><div class="table-wrap"><table><thead><tr><th>Resource</th><th>Activities</th><th>Observed events</th><th>Scenario</th></tr></thead><tbody id="resource-rows"></tbody></table></div><p id="resource-empty" class="subtle" hidden>No resources match your search.</p></section><aside class="card profile-detail" id="profile-detail" aria-label="Selected resource"></aside></div>
       </section>
+      <section id="view-explore" class="view" hidden><div id="explore-content"></div></section>
       <section id="view-scenario" class="view" hidden>
         <section class="card padded presets"><p class="eyebrow">START FROM A PRESET</p><div class="preset-row" id="presets">
           <button type="button" class="secondary" data-preset="pooled">Pooled allocation</button>
