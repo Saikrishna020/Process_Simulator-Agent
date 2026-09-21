@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Process Lab · Resource simulations</title>
+  <link rel="stylesheet" href="/static/workbench.css">
+  <script src="/static/workbench.js" defer></script>
+</head>
+<body>
+<aside class="sidebar">
+  <a class="brand" href="/"><span class="brand-icon">≋</span><span>Process Lab<small>AGENTSIMULATOR</small></span></a>
+  <div class="nav-label">WORKSPACE</div>
+  <nav aria-label="Main navigation">
+    <button class="nav-item active" data-view="resources"><span>◫</span> Resource profiles</button>
+    <button class="nav-item" data-view="scenario"><span>⑂</span> Scenario builder <b id="change-count">0</b></button>
+    <button class="nav-item" data-view="results"><span>▥</span> Results</button>
+    <button class="nav-item" data-view="history"><span>◷</span> Experiment history</button>
+  </nav>
+  <div class="sidebar-bottom"><span class="status-dot"></span> Local workspace<p>Learn from history.<br>Explore the alternatives.</p><a href="/chat">Open research simulator chat ↗</a></div>
+</aside>
+<main>
+  <header class="topbar"><span>Workspace <span class="slash">/</span> <strong id="breadcrumb">Resource profiles</strong></span><span class="pill">Empirical simulation</span></header>
+  <div class="page">
+    <div class="page-heading"><div><p class="eyebrow">HISTORY → RESOURCES → POSSIBILITIES</p><h1 id="page-title">Your process, understood.</h1><p id="page-subtitle">Explore resource behavior learned from historical work.</p></div><button id="run-top" class="primary" disabled>Run comparison <span>↗</span></button></div>
+    <section class="dataset-strip" aria-label="Dataset selection"><div class="dataset-icon">▤</div><label for="dataset">Historical dataset<select id="dataset"></select></label><button id="learn" class="secondary">Learn resource profiles</button><span id="model-label" class="subtle">Select a dataset to begin.</span></section>
+    <div id="notice" role="alert" hidden></div>
+    <section id="job-panel" class="job-panel" hidden aria-live="polite"><div><span class="spinner"></span><strong id="job-message">Preparing…</strong><span id="job-percent"></span></div><progress id="job-progress" max="100" value="0"></progress><p id="job-note">You can return to this page while the job runs.</p><button id="retry-poll" class="secondary" hidden>Reconnect to job</button></section>
+    <div id="model-stats" class="stats-grid" hidden></div>
+    <section id="empty-state" class="empty-state"><span class="empty-icon">◫</span><h2>Start with the people behind the process.</h2><p>Learn who does what, how long tasks take, and when resources work. Then change the setup and compare the outcomes.</p><p class="subtle">BPI 2017 is selected for your first experiment. No AI API key is needed.</p></section>
+    <div id="workspace" hidden>
+      <section id="view-resources" class="view">
+        <div class="section-heading"><div><h2>Resource profiles <span id="resource-count" class="count"></span></h2><p>Historical capabilities, processing times and working patterns.</p></div><input type="search" id="resource-search" placeholder="Find a resource or activity…" aria-label="Search resources"></div>
+        <div class="resource-layout"><section class="card resource-list"><div class="table-wrap"><table><thead><tr><th>Resource</th><th>Activities</th><th>Observed events</th><th>Scenario</th></tr></thead><tbody id="resource-rows"></tbody></table></div><p id="resource-empty" class="subtle" hidden>No resources match your search.</p></section><aside class="card profile-detail" id="profile-detail" aria-label="Selected resource"></aside></div>
+      </section>
+      <section id="view-scenario" class="view" hidden>
+        <section class="card padded presets"><p class="eyebrow">START FROM A PRESET</p><div class="preset-row" id="presets">
+          <button type="button" class="secondary" data-preset="pooled">Pooled allocation</button>
+          <button type="button" class="secondary" data-preset="halve-delays">Halve all residual delays</button>
+          <button type="button" class="secondary" data-preset="remove-busiest">Remove the busiest person</button>
+          <button type="button" class="secondary" data-preset="copy-busiest">Add 3 copies of the busiest person</button>
+          <button type="button" class="secondary" data-preset="demand">Demand +50%</button>
+        </div><p class="field-help">Presets fill the form below; review them, then run. Each replaces your current changes.</p></section>
+        <div class="scenario-layout"><section class="card padded"><div class="section-heading"><div><p class="eyebrow">01 / EXPERIMENT SETUP</p><h2>Define your alternative</h2></div></div>
+          <form id="scenario-form">
+            <label>Scenario name<input id="scenario-name" maxlength="100" required value="BPI 2017 · staffing scenario"></label>
+            <div class="field-grid"><label>Arrival horizon <span class="unit">days</span><input id="horizon" type="number" min="7" max="90" value="30" required></label><label>Repetitions<input id="repetitions" type="number" min="1" max="10" value="3" required></label><label>Case demand <span class="unit">% of historical</span><input id="demand" type="number" min="25" max="300" value="100" required></label><label>Deadline <span class="unit">elapsed hours per case</span><input id="sla" type="number" min="1" max="8760" value="120" required></label></div>
+            <label>Work allocation<select id="routing"><option value="historical">Historical handoffs + added resource copies</option><option value="pooled">Earliest available qualified resource</option></select></label>
+            <p class="field-help">Historical allocation keeps observed handoffs. Copies share the source resource’s work. If a source is removed, qualified peers receive its work.</p>
+            <label>Random seed<input id="seed" type="number" min="0" max="1000000" value="42" required></label>
+            <p class="field-help">Baseline and scenario use paired seeds. No changes should produce identical results.</p>
+            <button type="submit" class="primary wide" id="run-scenario">Run baseline + scenario ↗</button>
+          </form>
+        </section><div><section class="card padded"><div class="section-heading"><div><p class="eyebrow">02 / RESOURCE CHANGES</p><h2>Your changes</h2></div><button id="reset-changes" class="text-button">Clear all</button></div><div id="changes-list"></div><button class="secondary wide" id="choose-resource">Choose a resource to change</button></section>
+          <section class="card padded activity-editor"><p class="eyebrow">03 / ACTIVITY CHANGES</p><h2>Adjust a task</h2><form id="activity-form"><label>Activity<select id="activity-select"></select></label><div class="field-grid"><label>Processing time <span class="unit">% of historical</span><input id="activity-duration" type="number" min="10" max="500" value="100" required></label><label>Residual delay <span class="unit">% of historical</span><input id="activity-delay" type="number" min="0" max="500" value="100" required></label></div><p class="field-help">For example, 80% models a 20% reduction. Residual delay excludes modeled queues and off-hours, but its cause is unknown.</p><button class="secondary wide" type="submit">Add activity change</button></form></section>
+        </div></div>
+      </section>
+      <section id="view-results" class="view" hidden><div id="no-results" class="card empty-state"><h2>Your next decision starts with a comparison.</h2><p>Make a change, run the experiment, and see how the outcomes move.</p><button class="primary" id="build-scenario">Build a scenario ↗</button></div><div id="results-content" hidden></div></section>
+      <section id="view-history" class="view" hidden><div class="section-heading"><div><h2>Experiment history</h2><p>Saved locally with model snapshots, settings, seeds and event logs.</p></div><button class="secondary" id="refresh-history">Refresh</button></div><div id="history-list"></div></section>
+      <details class="model-notes"><summary>Model assumptions & data quality <span id="model-version"></span></summary><div id="model-notes-content"></div></details>
+    </div>
+    <footer>Process Lab <span>·</span> Resource experiments grounded in event history <span>·</span> All schedules shown in UTC</footer>
+  </div>
+</main>
+</body>
+</html>

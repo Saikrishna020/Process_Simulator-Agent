@@ -28,6 +28,8 @@ from .orchestrator import jobs
 from .orchestrator.config import get_settings
 from .orchestrator.llm import configure_langsmith
 from .orchestrator.logging_utils import setup_logging
+from .workbench.api import router as workbench_router
+from .workbench.service import workbench
 
 log = logging.getLogger(__name__)
 
@@ -36,15 +38,16 @@ MAX_MESSAGE_LENGTH = 2000
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    setup_logging()
-    get_settings()  # fail fast if .env is missing/invalid
-    configure_langsmith()
+    # The scenario workbench is local and needs no LLM credentials.
+    logging.basicConfig(level=logging.INFO)
+    workbench.recover()
     log.info("Orchestrator ready (cwd=%s)", Path.cwd())
     yield
     jobs.shutdown()
 
 
 app = FastAPI(title="AgentSimulator Orchestrator", lifespan=lifespan)
+app.include_router(workbench_router)
 
 
 class MessageIn(BaseModel):
@@ -57,6 +60,12 @@ class ConfirmIn(BaseModel):
 
 @app.post("/api/sessions")
 def create_session():
+    try:
+        get_settings()
+        setup_logging()
+        configure_langsmith()
+    except RuntimeError:
+        raise HTTPException(503, "Chat requires a DeepSeek API key in .env. The scenario workbench works without it.")
     return {"thread_id": jobs.create_session()}
 
 
@@ -102,11 +111,18 @@ app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 @app.get("/")
 def index():
+    return FileResponse(str(static_dir / "workbench.html"))
+
+
+@app.get("/chat")
+def chat_index():
     return FileResponse(str(static_dir / "index.html"))
 
 
 if __name__ == "__main__":
     import uvicorn
 
-    settings = get_settings()
-    uvicorn.run(app, host=settings.orchestrator_host, port=settings.orchestrator_port)
+    import os
+    from dotenv import load_dotenv
+    load_dotenv(REPO_ROOT / ".env")
+    uvicorn.run(app, host=os.getenv("ORCHESTRATOR_HOST", "127.0.0.1"), port=int(os.getenv("ORCHESTRATOR_PORT", "8000")))
