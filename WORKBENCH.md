@@ -173,66 +173,94 @@ This also changes the business conclusion. Under v1, capacity looked like the bo
 under v2 about 78% of simulated cycle time is external delay, and adding or removing
 individual people barely moves cycle time (see `PROJECT_GUIDE.md`, sections 4 and 6).
 
-## Is the ~20% baseline gap real? (`scripts/check_baseline_censoring.py`)
+## How well does the baseline match history? (and why it was ~20% off)
 
-The results page compares the simulated baseline with the held-out historical median.
-On BPI 2017 that looked like a 20% overshoot (mean cycle time 337 h simulated vs 281 h
-real). Part of it is an artefact of how the real number is measured.
+Every result page ends with a validation panel: the simulated baseline against real held-out
+cases. On BPI 2017 it first looked like a 20% overshoot (mean case duration 337 h simulated vs
+281 h real). Two separate things were going on. Both can be reproduced with the scripts below.
 
-**The artefact.** Held-out cases start after 19 Oct 2016, but the log stops on 1 Feb 2017.
-Cases arriving late have less time to finish, so they are cut short (right-censored) and look
-faster than they were. The simulator runs every case to completion. The real data shows it:
+### 1. The real number was measured unfairly
+
+Held-out cases start after 19 Oct 2016, but the log stops on 1 Feb 2017. Cases arriving late have
+less time to finish, so they are cut short and look faster than they were. The simulator runs
+every case to completion. The real data shows it:
 
 | Arrival week of the held-out case | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Follow-up left before the log ends (days) | 98 | 91 | 84 | 77 | 70 | 63 | 56 | 49 | 42 | 35 | 29 |
-| Real mean cycle time (h) | 311 | 317 | 310 | 302 | 296 | 266 | 265 | 254 | 258 | 208 | 238 |
+| Real mean case duration (h) | 311 | 317 | 310 | 302 | 296 | 266 | 265 | 254 | 258 | 208 | 238 |
 
-**A fair reference.** Keep only held-out cases with at least 75 days of follow-up (2,817 of
-6,300). The result matches early-2016 training cases that had plenty of follow-up:
+Only using cases that are "concluded" would make this worse, not better: the slow cases are the
+ones still open, so dropping them removes exactly the long durations. The log also has no
+"finished" flag. Instead the app keeps held-out cases that **had enough time to finish**: at
+least as much follow-up as 99.5% of the training cases needed (62 days on BPI 2017, 3,937 of
+6,300 cases). If too little history remains, it falls back to all held-out cases and says so.
 
-| Real cycle time (h) | mean | median | p90 |
+The reference depends somewhat on how strict that rule is (real mean / median / p90 in hours):
+
+| Rule | Cases | Mean | Median | p90 |
+| --- | --- | --- | --- | --- |
+| All held-out cases | 6,300 | 281 | 219 | 602 |
+| Follow-up >= 99th percentile (52 d) | 4,748 | 296 | 232 | 627 |
+| **Follow-up >= 99.5th percentile (62 d), used by the app** | 3,937 | 300 | 232 | 626 |
+| Follow-up >= 75 days | 2,817 | 313 | 238 | 646 |
+| Follow-up >= 99.9th percentile (94 d) | 1,032 | 318 | 242 | 667 |
+
+Applying the same cut-off to the simulated cases lowers the simulated mean by only ~11 h (3%),
+while the real mean falls ~32 h (10%). So the log ending explains a good part of the gap but not
+the whole drop: real durations also fall for cases arriving in weeks 5 to 8, where almost every
+case had time to finish. With one year of data a seasonal or process change in Nov-Dec 2016
+cannot be separated from other causes.
+
+(`python scripts/check_baseline_censoring.py`)
+
+### 2. Against the fair reference the baseline is +12% (mean), +3% (median), +18% (p90)
+
+The median is right. The mean and the tail are too slow. The validation panel shows where:
+
+| Measure | Real | Simulated | Difference |
 | --- | --- | --- | --- |
-| As evaluated (all 6,300 held-out cases) | 281 | 219 | 602 |
-| Fair reference (>= 75 d follow-up, 2,817 cases) | 312 | 238 | 646 |
-| Early training cases, long follow-up (18,594 cases) | 312 | 234 | 641 |
+| Mean case duration (h) | 300 | 337 | +12% |
+| Median case duration (h) | 232 | 239 | +3% |
+| 90th percentile duration (h) | 626 | 736 | +18% |
+| Cases arriving per day | 80.8 | 84.2 | +4% |
+| Tasks per case | 7.6 | 8.1 | +6% |
 
-**Simulated vs real, like for like** (78-day window matching the held-out arrivals, 5 seeds):
+The last two rows are process drift: the model learns from Jan-Oct 2016, when cases had 8.1 tasks
+and slightly more arrived per day than in Oct-Jan. That is not a simulator flaw.
 
-| Simulated (h) | mean | median | p90 |
-| --- | --- | --- | --- |
-| Run to completion (what the Lab reports) | 348 | 254 | 737 |
-| Cut at the real log end | 337 | 254 | 716 |
+Idle time before a task (time since the case's previous task ended) is right on average for most
+activities (within ~20%) but wrong at the median for two: Validate application (31 h real, 20 h
+simulated) and Call after offers (4 h real, 20 h simulated).
 
-| Gap of the simulation to... | mean | median | p90 |
-| --- | --- | --- | --- |
-| all held-out cases (what the UI shows) | +24% | +16% | +22% |
-| the fair reference | **+11%** | **+7%** | **+14%** |
+### 3. Root cause of the tail: a few extreme recorded durations
 
-With the Lab's default 30-day horizon the simulated baseline is 337 / 239 / 736 h, i.e.
-+8% / +0.4% / +14% against the fair reference (versus +20% / +9% / +22% against the
-censored one).
+The panel also lists who holds the simulated queues: three people hold ~48% of all queueing
+(User_121 alone 25%) even though their observed load in history is only 18-47%. Their typical
+task is short (User_121: 2 minutes) but 79% of their total recorded working time sits in the
+slowest 1% of tasks, including one 161-hour item. Across the log, **195 of 195,564 recorded tasks
+(0.1%) hold 38% of all working time; the longest is 531 working hours.** These are almost
+certainly work items left open and resumed weeks later, not real work. When the simulation
+samples one, that person is blocked for weeks and a queue builds behind them.
 
-**What this does and does not explain**
+Capping durations at 24 working hours (187 samples affected), in memory only:
 
-- The log ending explains about half of the apparent gap. The rest is a real model error.
-- Pure right-censoring is too small to explain the whole drop in the real data. Applying the
-  same cut-off to the simulation lowers its mean by only ~11 h (3%), while the real mean
-  falls ~32 h (10%). Real cycle times also fall for cases arriving in weeks 5 to 8, where
-  almost every case has time to finish. With one year of data the log cannot separate a
-  seasonal or process change in Nov-Dec 2016 from other truncation effects. That remainder
-  (~20 h) is unexplained.
-- The remaining model error is in the tail and comes from a few overloaded people. Median
-  cycle time matches (+0.4% to +7%), but the mean and p90 are too high because a few
-  resources build multi-week queues under the fixed "preferred person" routing and inferred
-  calendars (the top five resources hold 40-60% of all simulated queue hours, and which five
-  varies by seed). Real staff clearly relieve such queues; the simulator does not. Pooled
-  routing removes them (queue wait -96%) but overshoots to ~270 h, below the fair reference of
-  312 h, so reality sits between the two allocation rules.
-- The simulated mean also grows with the window length (337 h at 30 days, 348 h at 78 days),
-  another sign of queues that accumulate.
+| | Mean | Median | p90 | Top-3 share of queueing | Mean queue wait |
+| --- | --- | --- | --- | --- | --- |
+| As learned | +12.2% | +3.2% | +17.6% | 48% | 71 h |
+| Capped at 24 h | -2.7% | -4.7% | -6.2% | 14% | 28 h |
+| Capped at 8 h | -4.2% | -6.5% | -7.2% | 14% | 24 h |
 
-**Consequence for the UI.** The "baseline fidelity check" should compare against the fair
-reference (held-out cases with follow-up of at least the 99th-percentile training cycle time),
-not against every held-out case. This is not yet implemented because it changes the stored
-model and requires re-learning and re-running the saved experiments.
+So most of the remaining overshoot comes from 0.1% of the data, not from the method.
+
+(`python scripts/diagnose_baseline_gap.py`)
+
+### What is not yet done
+
+- **The cap is not applied to the model.** It slightly over-corrects (a small undershoot),
+  because the elapsed time of those weeks disappears. The better fix is to cap the working time
+  and treat the excess as idle waiting (residual delay) rather than deleting it. This changes every
+  headline number, so it should be a deliberate model-version change.
+- **Sticky routing still matters.** Historical routing is too rigid (a person's queue never spills
+  over), pooled routing is too flexible (it undershoots the real 300 h). Reality sits between them.
+- **The Nov-Dec decline** in real case durations is unexplained.

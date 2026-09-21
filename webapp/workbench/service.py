@@ -16,11 +16,22 @@ from webapp.orchestrator.config import REPO_ROOT
 from webapp.orchestrator.dataset_registry import known_datasets, get_dataset
 from .model import MODEL_VERSION, atomic_json, discover, file_hash, public_model
 from .schemas import ExperimentRequest
-from .simulation import compare, scenario_resources, simulate
+from .simulation import compare, scenario_resources, simulate, validate
 
 
 class BusyError(ValueError):
     pass
+
+
+def read_json(path: Path):
+    """Read a JSON file that another thread may be replacing (Windows denies reads mid-replace)."""
+    for attempt in range(40):
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except PermissionError:
+            if attempt == 39:
+                raise
+            time.sleep(.025)
 
 
 class Workbench:
@@ -69,11 +80,11 @@ class Workbench:
         return self.root / "jobs" / f"{job_id}.json"
 
     def job(self, job_id):
-        return json.loads(self._job_path(job_id).read_text(encoding="utf-8"))
+        return read_json(self._job_path(job_id))
 
     def history(self):
         paths = sorted((self.root / "jobs").glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)[:50]
-        return [json.loads(p.read_text(encoding="utf-8")) for p in paths]
+        return [read_json(p) for p in paths]
 
     def submit(self, kind, payload):
         if kind == "discover":
@@ -146,7 +157,7 @@ class Workbench:
                     model_id=model["model_id"], model_version=model["version"], source_hash=model["source_hash"],
                     assumptions=model["assumptions"], historical_cycle_hours=model["historical_cycle_hours"],
                     completed_at=datetime.now(timezone.utc).isoformat(), baseline_runs=before, scenario_runs=after,
-                    comparison=compare(before, after))
+                    comparison=compare(before, after), validation=validate(model, before, payload.horizon_days))
                 atomic_json(output / "result.json", result)
                 job.update(model_id=model["model_id"], message="Baseline and scenario comparison ready")
             job.update(status="done", progress=100)
@@ -163,7 +174,7 @@ class Workbench:
         job = self.job(job_id)
         if job["kind"] != "experiment" or job["status"] != "done":
             raise ValueError("This experiment has not completed successfully.")
-        return json.loads((self.root / "experiments" / job_id / "result.json").read_text(encoding="utf-8"))
+        return read_json(self.root / "experiments" / job_id / "result.json")
 
     def download(self, job_id, filename):
         result = self.result(job_id)

@@ -102,6 +102,9 @@ def simulate(model: dict, request: ExperimentRequest, seed: int, *, baseline=Fal
     resource_work = defaultdict(float)
     resource_events = defaultdict(int)
     activity_wait = defaultdict(list)
+    activity_gap = defaultdict(list)
+    resource_queue = defaultdict(float)
+    last_end = {}
     completed = 0
     while queue:
         if len(events) % 1000 == 0 and deadline and time.monotonic() > deadline:
@@ -132,6 +135,10 @@ def simulate(model: dict, request: ExperimentRequest, seed: int, *, baseline=Fal
         if start < horizon:
             resource_events[rid] += 1
         activity_wait[activity].append(wait / 3600)
+        resource_queue[rid] += wait
+        if case_index in last_end:  # idle time since the case's previous task, as measured in the historical log
+            activity_gap[activity].append((start - last_end[case_index]) / 3600)
+        last_end[case_index] = end
         events.append(dict(case_id=case["case_id"], activity=activity, resource_id=rid, resource=resource["name"],
                            arrival_timestamp=case["arrival"], ready_timestamp=ready, start_timestamp=start,
                            end_timestamp=end, processing_seconds=work, queue_seconds=wait,
@@ -155,9 +162,12 @@ def simulate(model: dict, request: ExperimentRequest, seed: int, *, baseline=Fal
         active_resources=len(resources))
     resource_metrics = [dict(id=rid, name=r["name"], template_id=r["template_id"],
         utilization_pct=100 * resource_work[rid] / max(1, working_between(begin, horizon, r["calendar"])),
-        started_tasks=resource_events[rid]) for rid, r in resources.items()]
-    return dict(seed=seed, metrics=metrics, resources=resource_metrics,
-                activities=[dict(name=a, mean_wait_hours=float(np.mean(v))) for a, v in activity_wait.items()]), events
+        started_tasks=resource_events[rid], queue_hours=resource_queue[rid] / 3600) for rid, r in resources.items()]
+    return dict(seed=seed, metrics=metrics, resources=resource_metrics, tasks_per_case=len(events) / len(plan),
+                activities=[dict(name=a, mean_wait_hours=float(np.mean(v)),
+                                 mean_gap_hours=float(np.mean(activity_gap[a])) if activity_gap[a] else 0.0,
+                                 median_gap_hours=float(np.median(activity_gap[a])) if activity_gap[a] else 0.0)
+                            for a, v in activity_wait.items()]), events
 
 
 def compare(baselines, scenarios):
@@ -186,3 +196,50 @@ def compare(baselines, scenarios):
             item[label] = float(np.mean(values)) if values else 0
         activities.append(item)
     return dict(metrics=comparison, resources=resources, activities=activities)
+
+
+def _change_pct(real, simulated):
+    return float(100 * (simulated / real - 1)) if real else None
+
+
+def validate(model: dict, baselines: list, horizon_days: int):
+    """Compare the simulated baseline with held-out history that had time to finish.
+
+    Returns None for models without a reference (older snapshots). Scenario settings do not
+    matter: the baseline never applies them.
+    """
+    ref = model.get("reference")
+    if not ref:
+        return None
+    mean = lambda values: float(np.mean(values))
+    cycle = []
+    for label, key, real_key in [("Mean case duration (h)", "mean_cycle_hours", "mean"), ("Median case duration (h)", "median_cycle_hours", "median"),
+                                 ("90th percentile duration (h)", "p90_cycle_hours", "p90")]:
+        real, simulated = ref["cycle_hours"][real_key], mean([r["metrics"][key] for r in baselines])
+        cycle.append(dict(label=label, real=real, simulated=simulated, difference_pct=_change_pct(real, simulated)))
+    flow = []
+    real, simulated = ref["arrivals_per_day"], mean([r["metrics"]["arrived_cases"] for r in baselines]) / horizon_days
+    flow.append(dict(label="Cases arriving per day", real=real, simulated=simulated, difference_pct=_change_pct(real, simulated)))
+    real, simulated = ref["events_per_case"], mean([r["tasks_per_case"] for r in baselines])
+    flow.append(dict(label="Tasks per case", real=real, simulated=simulated, difference_pct=_change_pct(real, simulated)))
+    activities = []
+    for name, real in sorted(ref["activity_gaps"].items(), key=lambda item: -item[1]["events"]):
+        seen = [a for r in baselines for a in r["activities"] if a["name"] == name]
+        if not seen:
+            continue
+        median, average = mean([a["median_gap_hours"] for a in seen]), mean([a["mean_gap_hours"] for a in seen])
+        activities.append(dict(name=name, events=real["events"], real_median=real["median_hours"], simulated_median=median,
+                               real_mean=real["mean_hours"], simulated_mean=average, mean_difference_pct=_change_pct(real["mean_hours"], average)))
+    queue = defaultdict(list)
+    for run in baselines:
+        for r in run["resources"]:
+            queue[r["id"]].append(r["queue_hours"])
+    totals = {rid: mean(values) for rid, values in queue.items()}
+    everything = sum(totals.values()) or 1
+    known = {p["id"]: p for p in model["resources"]}
+    busiest = [dict(name=known[rid]["name"], queue_hours=hours, share_pct=100 * hours / everything, observed_load_pct=known[rid]["observed_load_pct"])
+               for rid, hours in sorted(totals.items(), key=lambda item: -item[1])[:6] if rid in known]
+    return dict(cases=ref["cases"], all_test_cases=ref["all_test_cases"], follow_up_days=ref["follow_up_days"],
+                censoring_controlled=ref["censoring_controlled"], horizon_days=horizon_days, cycle=cycle, flow=flow,
+                activities=activities, queue_resources=busiest,
+                all_test_cycle_hours=ref["all_test_cycle_hours"])

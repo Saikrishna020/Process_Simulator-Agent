@@ -12,7 +12,7 @@ from webapp.workbench.calendar import DAY, finish_work, next_work, working_betwe
 from webapp.workbench.model import MODEL_VERSION, _samples, atomic_json, discover, first_available
 from webapp.workbench.schemas import ExperimentRequest
 from webapp.workbench.service import BusyError, Workbench
-from webapp.workbench.simulation import arrival_plan, compare, scenario_resources, simulate
+from webapp.workbench.simulation import arrival_plan, compare, scenario_resources, simulate, validate
 
 MONDAY = datetime(2026, 1, 5, tzinfo=timezone.utc).timestamp()
 CALENDAR = [[9*3600, 17*3600] for _ in range(5)] + [None, None]
@@ -199,3 +199,51 @@ def test_research_enabled_times_fall_back_when_windows_denies_process_pipes(monk
     oracle.add_enabled_times(frame,set_nat_to_first_event=True)
     assert pd.isna(frame.loc[0,ids.enabled_time])
     assert frame.loc[1,ids.enabled_time]==frame.loc[0,ids.end_time]
+
+
+def slow_case_frame():
+    """300 daily cases of two tasks ten days apart; the log stops at the end of day 299, so late cases are cut short."""
+    rows=[]
+    origin=pd.Timestamp('2026-01-01T09:00:00Z')
+    for case in range(300):
+        for offset,activity in [(0,'Review'),(10,'Approve')]:
+            start=origin+pd.Timedelta(days=case+offset)
+            rows.append(dict(case_id=f'case-{case}',activity=activity,resource='Alice',start=start,end=start+pd.Timedelta(hours=1)))
+    frame=pd.DataFrame(rows)
+    return frame[frame.end<=origin+pd.Timedelta(days=299,hours=1)]
+
+
+def test_reference_leaves_out_held_out_cases_cut_short_by_the_end_of_the_log():
+    model=discover(slow_case_frame(),'test','a'*24,'hash')
+    ref=model['reference']
+    assert ref['censoring_controlled'] and ref['follow_up_days']>=10
+    assert ref['cases']<ref['all_test_cases']
+    assert ref['cycle_hours']['mean']>ref['all_test_cycle_hours']['mean']
+    assert ref['cycle_hours']['median']==pytest.approx(241,abs=1)
+    assert model['historical_cycle_hours']==ref['cycle_hours']
+
+
+def test_reference_falls_back_to_all_held_out_cases_and_says_so_when_history_is_too_short():
+    ref=discover(event_frame(),'test','a'*24,'hash')['reference']
+    assert ref['cases']==ref['all_test_cases']==4
+    assert not ref['censoring_controlled']
+
+
+def test_explorer_summarises_the_whole_log():
+    info=discover(slow_case_frame(),'test','a'*24,'hash')['explore']
+    assert info['cases']==300 and info['resource_count']==1 and info['activity_count']==2
+    assert info['variants'][0]['steps']==['Review','Approve']
+    assert sum(map(sum,info['hour_of_week']))==info['events']
+    assert info['handover']['names']==['Alice'] and info['handover']['matrix']==[[1.0]] and info['handover']['same_resource_pct']==100
+    approve=next(a for a in info['activities'] if a['name']=='Approve')
+    assert approve['median_gap_hours']==pytest.approx(239,abs=1)  # ten days minus the one-hour first task
+
+
+def test_validation_compares_the_baseline_with_the_reference_and_skips_old_models(model):
+    learned=discover(slow_case_frame(),'test','a'*24,'hash')
+    run,_=simulate(learned,request(),42,baseline=True)
+    result=validate(learned,[run],7)
+    assert [row['label'][:4] for row in result['cycle']]==['Mean','Medi','90th']
+    assert {a['name'] for a in result['activities']}=={'Approve'}
+    assert result['queue_resources'][0]['name']=='Alice'
+    assert validate(model,[run],7) is None
