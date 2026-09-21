@@ -201,9 +201,9 @@ class ConcurrencyOracle:
                     indexes += indexes_
                     enabled_times += enabled_times_
                     enabling_activities += enabling_activities_
-        except BrokenProcessPool:
+        except (BrokenProcessPool, PermissionError):
             log.warning(
-                "ProcessPoolExecutor crashed while computing enabled times (%d traces); "
+                "ProcessPoolExecutor unavailable while computing enabled times (%d traces); "
                 "falling back to sequential execution.",
                 len(traces),
             )

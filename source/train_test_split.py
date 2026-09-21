@@ -77,6 +77,7 @@ def split_data(PATH_LOG, column_names, PATH_LOG_test=None):
             df_test = pm4py.read_xes(PATH_LOG_test)
         df_train = df_train.rename(columns=column_names)
         df_test = df_test.rename(columns=column_names)
+        df_train_big = df_train
 
     # inform about number of cases
     print(f"The train log conisists of {len(set(df_train_big['case_id']))} cases")

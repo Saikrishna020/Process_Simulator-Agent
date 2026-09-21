@@ -4,8 +4,9 @@ A LangGraph agent (DeepSeek as the LLM, LangSmith for tracing) that turns natura
 requests into safely-executed runs of the existing `simulate.py` pipeline, with a small
 FastAPI + vanilla-JS chat UI on top.
 
-The simulation logic itself (`source/`) is untouched research code — this layer's only job is to
-plan, validate, confirm, execute, and explain runs of it safely.
+The simulation logic (`source/`) is based on the research implementation. This layer
+plans, validates, confirms, executes and reports its runs. The separate Process Lab
+scenario workbench is documented in [WORKBENCH.md](WORKBENCH.md).
 
 ## Architecture
 
@@ -28,7 +29,7 @@ plan, validate, confirm, execute, and explain runs of it safely.
     ├─ run_simulation        (code) → subprocess.run(["python", "simulate.py", ...]), bounded
     │                                  retries, timeout, concurrency-limited (tools.py)
     ├─ evaluate_results      (code) → reuses evaluate_run.evaluate() — no metric reimplementation
-    └─ summarize             (LLM)  → plain-English explanation of the metrics
+    └─ summarize             (code) → formatted metrics and fixed explanations
 ```
 
 Every LLM output is a typed, schema-validated proposal (`SimulationRequest` /
@@ -37,8 +38,9 @@ filesystem or subprocess call without first passing `guardrails.validate_request
 
 ## Guardrails
 
-1. **Secrets** only come from `.env` (gitignored, untracked). Startup fails fast if
-   `deepseek_api_key` is missing. Log records are scrubbed of any known secret value
+1. **Secrets** come from environment configuration / `.env` (gitignored, untracked).
+   Chat session creation fails if `deepseek_api_key` is missing; the scenario workbench
+   does not require it. Log records are scrubbed of any known secret value
    (`logging_utils.SecretRedactionFilter`).
 2. **Path containment**: every dataset path is resolved against `raw_data/` and rejected if it
    would resolve outside it (`guardrails._resolve_within_raw_data`) — no `..` traversal, no
@@ -68,7 +70,7 @@ cp .env.example .env        # then fill in deepseek_api_key (and LangSmith keys,
 ./.venv/Scripts/python.exe -m webapp.main
 ```
 
-Open http://127.0.0.1:8000 and ask it to simulate a dataset, e.g. *"simulate LoanApp with 3 runs"*.
+Open http://127.0.0.1:8000/chat and ask it to simulate a dataset, e.g. *"simulate LoanApp with 3 runs"*.
 Currently registered/available datasets: LoanApp, BPIC_2017_W, BPIC_2019 (see
 `webapp/orchestrator/dataset_registry.py` — only datasets whose raw file actually exists under
 `raw_data/` are offered).
@@ -99,6 +101,12 @@ Currently registered/available datasets: LoanApp, BPIC_2017_W, BPIC_2019 (see
    slower) rather than crashing the whole multi-hour pipeline.
 
 ## Known limitations (by design, for a local single-operator tool)
+
+Each new research run writes beneath `simulated_data/<dataset>/<mode>/<run_id>/`.
+The evaluator receives that explicit directory, including for manual modes.
+Earlier outputs are preserved. The automatic configuration trials now use their
+validation arrival schedule, and enabled-time discovery falls back to sequential
+execution when Windows denies multiprocessing pipe creation.
 
 - All LangGraph invocations are serialized behind one lock (`jobs._graph_lock`) — the SQLite
   checkpointer isn't safe for truly concurrent writers, and this isn't meant to be a multi-tenant

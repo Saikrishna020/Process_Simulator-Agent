@@ -610,7 +610,7 @@ def determine_agent_behavior_type_and_extraneous_delays(simulation_parameters, d
     """
     Determine the agent behavior type and extraneous delays.
     """
-    timers_extr = _get_times_for_extr_delays(df_train, discover_extr_delays=True)
+    timers_extr = _get_times_for_extr_delays(df_train, discover_extr_delays=True) if simulation_parameters['determine_automatically'] or discover_extr_delays_parameter else {}
     timers = _get_times_for_extr_delays(df_train, discover_extr_delays=False)
     # create a copy of the simulation parameters such that we can modify it without changing the original one
     simulation_parameters_copy = simulation_parameters.copy()
@@ -622,7 +622,7 @@ def determine_agent_behavior_type_and_extraneous_delays(simulation_parameters, d
         start_timestamp = sampled_case_starting_times[0]
         sampled_case_starting_times = sampled_case_starting_times[1:]
 
-        simulation_parameters_copy['sampled_case_starting_times'] = sampled_case_starting_times
+        simulation_parameters_copy['case_arrival_times'] = sampled_case_starting_times
         simulation_parameters_copy['start_timestamp'] = start_timestamp
         simulation_parameters_copy['timers'] = timers_extr
         simulation_parameters_copy['central_orchestration'] = central_orchestration
@@ -641,7 +641,7 @@ def determine_agent_behavior_type_and_extraneous_delays(simulation_parameters, d
         simulation_parameters_copy['timers'] = timers
         sampled_case_starting_times = case_arrival_times_val
         simulation_parameters_copy['start_timestamp'] = sampled_case_starting_times[0]
-        simulation_parameters_copy['sampled_case_starting_times'] = sampled_case_starting_times[1:]
+        simulation_parameters_copy['case_arrival_times'] = sampled_case_starting_times[1:]
         simulation_parameters_copy['central_orchestration'] = True
         # Create the model using the loaded data
         business_process_model = BusinessProcessModel(df_train, simulation_parameters_copy)
@@ -659,7 +659,7 @@ def determine_agent_behavior_type_and_extraneous_delays(simulation_parameters, d
         simulation_parameters_copy['timers'] = timers_extr
         sampled_case_starting_times = case_arrival_times_val
         simulation_parameters_copy['start_timestamp'] = sampled_case_starting_times[0]
-        simulation_parameters_copy['sampled_case_starting_times'] = sampled_case_starting_times[1:]
+        simulation_parameters_copy['case_arrival_times'] = sampled_case_starting_times[1:]
         simulation_parameters_copy['transition_probabilities'] = simulation_parameters_copy['transition_probabilities_autonomous']
         simulation_parameters_copy['agent_transition_probabilities'] = simulation_parameters_copy['agent_transition_probabilities_autonomous']
         # Create the model using the loaded data
@@ -677,7 +677,7 @@ def determine_agent_behavior_type_and_extraneous_delays(simulation_parameters, d
         simulation_parameters_copy['timers'] = timers
         sampled_case_starting_times = case_arrival_times_val
         simulation_parameters_copy['start_timestamp'] = sampled_case_starting_times[0]
-        simulation_parameters_copy['sampled_case_starting_times'] = sampled_case_starting_times[1:]
+        simulation_parameters_copy['case_arrival_times'] = sampled_case_starting_times[1:]
         simulation_parameters_copy['central_orchestration'] = False
         simulation_parameters_copy['transition_probabilities'] = simulation_parameters_copy['transition_probabilities_autonomous']
         simulation_parameters_copy['agent_transition_probabilities'] = simulation_parameters_copy['agent_transition_probabilities_autonomous']

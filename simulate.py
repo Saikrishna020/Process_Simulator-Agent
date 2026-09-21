@@ -10,6 +10,7 @@ def parse_arguments():
     parser.add_argument('--log_path', help='Path to single log file, which is split into train and test')
     parser.add_argument('--train_path', help='Path to training log file')
     parser.add_argument('--test_path', help='Path to test log file')
+    parser.add_argument('--output_dir', help='Explicit directory for this run (orchestrator uses an isolated run directory)')
     
     # Column names
     parser.add_argument('--case_id', help='Case ID column name')
@@ -63,6 +64,8 @@ if __name__ == "__main__":
         'column_names': column_names,
         'num_simulations': args.num_simulations
     }
+    if args.output_dir:
+        params['output_dir'] = args.output_dir
 
     simulator = AgentSimulator(params)
     simulator.execute_pipeline()

@@ -165,7 +165,7 @@ def evaluate_results(state: AgentState) -> dict:
     file_name = Path(manifest.output_dir).parent.name
     try:
         summary = tools.evaluate_simulation(
-            manifest.dataset_name, file_name, len(manifest.simulated_log_files)
+            manifest.dataset_name, file_name, len(manifest.simulated_log_files), output_dir=manifest.output_dir
         )
         return {"evaluation": summary.model_dump()}
     except Exception as exc:  # evaluation is best-effort — the run itself already succeeded

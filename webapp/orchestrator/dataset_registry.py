@@ -37,11 +37,11 @@ _REGISTRY: dict[str, DatasetEntry] = {
         DatasetEntry(
             name="BPIC_2017_W",
             relative_log_path="BPIC_2017_W.csv",
-            case_id="case:concept:name",
-            activity_name="concept:name",
-            resource="org:resource",
+            case_id="case_id",
+            activity_name="activity",
+            resource="resource",
             start_timestamp="start_timestamp",
-            end_timestamp="time:timestamp",
+            end_timestamp="end_timestamp",
             description="BPI Challenge 2017, work-item subset. Large loan-application process log.",
         ),
         DatasetEntry(

@@ -87,14 +87,9 @@ def run_simulation(validated: ValidatedRequest) -> RunManifest:
 
     try:
         cmd = _build_command(validated.log_path, request)
-        output_dir = _expected_output_dir(validated.log_path, request)
         run_id = f"{datetime.now(timezone.utc):%Y%m%dT%H%M%S}_{uuid.uuid4().hex[:8]}"
-
-        # Clear stale simulated_log_*.csv from a previous run with a different num_simulations —
-        # otherwise leftover files make the post-run file count check unreliable.
-        if output_dir.exists():
-            for stale in output_dir.glob("simulated_log_*.csv"):
-                stale.unlink()
+        output_dir = _expected_output_dir(validated.log_path, request) / run_id
+        cmd.extend(["--output_dir", str(output_dir)])
 
         last_exc: Exception | None = None
         for attempt in range(1, settings.max_run_retries + 2):  # +1 initial + retries
@@ -160,7 +155,7 @@ def run_simulation(validated: ValidatedRequest) -> RunManifest:
         limiter.release()
 
 
-def evaluate_simulation(dataset_name: str, file_name: str, num_simulations: int) -> EvaluationSummary:
+def evaluate_simulation(dataset_name: str, file_name: str, num_simulations: int, output_dir=None) -> EvaluationSummary:
     """Reuses evaluate_run.evaluate() rather than reimplementing the distance metrics.
 
     `file_name` is the simulated_data/<file_name>/ subdirectory name (see _expected_output_dir),
@@ -168,5 +163,5 @@ def evaluate_simulation(dataset_name: str, file_name: str, num_simulations: int)
     """
     import evaluate_run  # repo-root script; requires REPO_ROOT on sys.path and as cwd
 
-    metrics = evaluate_run.evaluate(file_name, num_simulations)
+    metrics = evaluate_run.evaluate(file_name, num_simulations, output_dir=output_dir)
     return EvaluationSummary(dataset_name=dataset_name, num_runs=num_simulations, metrics=metrics)

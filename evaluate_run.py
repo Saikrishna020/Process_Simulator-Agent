@@ -49,8 +49,8 @@ def align_column_names(df):
     return df
 
 
-def evaluate(log_name, num_simulations=10):
-    base = f'simulated_data/{log_name}/main_results'
+def evaluate(log_name, num_simulations=10, output_dir=None):
+    base = output_dir or f'simulated_data/{log_name}/main_results'
     event_log_ids = EventLogIDs(
         case="case_id", activity="activity",
         start_time="start_time", end_time="end_time", resource='resource'
