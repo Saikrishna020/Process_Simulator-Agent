@@ -5,6 +5,8 @@ see which changes actually matter.**
 
 ![Process Lab results: pooled allocation vs. historical baseline on BPI 2017](docs/screenshots/results.png)
 
+![Data explorer: work vs. waiting, common paths, working rhythm, handovers](docs/screenshots/explorer.png)
+
 ## What I found (BPI Challenge 2017, 31,500 loan applications, 149 people)
 
 1. **A typical case takes 9.7 days but needs only ~25 minutes of hands-on work** — 0.9% of
@@ -21,11 +23,11 @@ Full analysis, numbers and reproduction steps: **[PROJECT_GUIDE.md](PROJECT_GUID
 
 ## Honest limitations
 
-- **Not a forecast.** With no changes the simulated baseline reads ~20% slower than held-out
-  history (337 h vs 281 h), but about half of that is the real log ending early, which cuts late
-  cases short. Against a fair reference the gap is +8% mean, ~0% median and +14% at the tail (a
-  few overloaded people build unrealistic queues). Use it to *compare* scenarios, not to predict
-  days. Evidence: [WORKBENCH.md](WORKBENCH.md) and `scripts/check_baseline_censoring.py`.
+- **Not a forecast.** Every result shows the simulated baseline against real held-out cases that
+  had time to finish: +12% mean, +3% median, +18% at the tail. Most of the remaining overshoot traces
+  to 0.1% of recorded task durations (up to 531 working hours, probably items left open) that block
+  people for weeks in the simulation; capping them brings the gap to about -3%. Use it to *compare*
+  scenarios, not to predict days. Evidence: [WORKBENCH.md](WORKBENCH.md).
 - One task at a time per resource (15% of real work items overlap), no batching or fatigue.
 - Working hours are inferred from observed activity and shown in UTC.
 - Cloning a person copies the original's behaviour; a real new hire would differ.
@@ -38,7 +40,7 @@ cd AgentSimulator
 ./start-workbench.ps1          # Process Lab at http://127.0.0.1:8000, no API key needed
 ```
 
-Pick **BPIC_2017_W** → **Learn resource profiles** → open **Scenario builder** and start from a
+Pick **BPIC_2017_W** → **Learn resource profiles** → look around the **Data explorer** → open **Scenario builder** and start from a
 preset (pooled allocation, halve delays, remove the busiest person, demand +50%). Each run
 compares a paired baseline and scenario and saves settings, seeds and downloadable event logs.
 See [WORKBENCH.md](WORKBENCH.md) for the method, assumptions, API, and a write-up of a bug caught
@@ -68,7 +70,7 @@ the guide):
   worker with crash recovery; nothing is overwritten.
 - The chat agent never executes anything the LLM proposes directly: schema validation, path
   containment, human confirmation, no shell, bounded retries/timeouts.
-- 28 tests (`python -m pytest`), including a full LoanApp run of the research engine.
+- 32 tests (`python -m pytest`), run by GitHub Actions on every push, including a full LoanApp run of the research engine.
 - Data: `raw_data/` is not tracked (BPI logs are large). Convert the public BPI 2017 XES with
   `raw_data/xes_to_csv.py --w-only`. BPI 2019 is listed but disabled in the Lab because its
   export has only zero-duration events.

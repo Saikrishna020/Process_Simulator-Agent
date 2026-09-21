@@ -226,7 +226,7 @@ Pipeline (`AgentSimulator.execute_pipeline` → `discover_simulation_parameters`
 
 ### 5.2 Layer 2 — Process Lab, the workbench (`webapp/workbench/`)
 
-A **separate, deliberately simpler engine** built for interactive what-ifs and inspectability ("empirical trace-resampling", `engine = empirical-trace-v2`). It exists because the research engine takes minutes-to-hours and needs a temporal setup per run; the Lab learns once (~50 s on BPI 2017), caches an immutable model, and runs comparisons in **~10 s**.
+A **separate, deliberately simpler engine** built for interactive what-ifs and inspectability ("empirical trace-resampling", `engine = empirical-trace-v3`). It exists because the research engine takes minutes-to-hours and needs a temporal setup per run; the Lab learns once (~50 s on BPI 2017), caches an immutable model, and runs comparisons in **~10 s**.
 
 **Learning (`model.py: discover`)**
 1. Validate the log (no missing IDs, no negative durations; refuses an all-zero-duration log; needs ≥10 cases).
@@ -234,7 +234,7 @@ A **separate, deliberately simpler engine** built for interactive what-ifs and i
 3. **Per resource (137 profiles):** inferred calendar (earliest → latest observed hour per weekday, UTC), each activity's *empirical working-time samples* (off-calendar time removed), median/mean/p90, observed load %, top-5 handoffs.
 4. **Trace templates:** every training case's sequence `[activity, preferred resource, residual delay]` is frozen. Residual delay = time from the *first feasible working window after the case was ready* to the *observed start* — v2 fixes v1's bug (§9).
 5. **Arrivals:** for each weekday, the real list of per-day arrival-time offsets; simulation picks a historical day and reuses its arrivals.
-6. Stores assumptions, overlap %, and the held-out historical cycle-time (mean 281 h, median 219 h, p90 602 h) for a fidelity check.
+6. Stores assumptions, overlap %, and a fair held-out reference (cases with enough follow-up: mean 300 h, median 232 h, p90 626 h; all held-out cases would read 281 / 219 / 602 h because the log ends early), per-activity idle-time statistics, and the descriptive statistics behind the Data explorer.
 
 **Simulating (`simulation.py: simulate`)**
 - A **ready-time priority queue**: pop the earliest ready task, choose a resource, work it inside the calendar (pausing at shift end / weekends), release the resource, schedule the next task at `end + residual delay`.
@@ -251,7 +251,8 @@ A **separate, deliberately simpler engine** built for interactive what-ifs and i
 **The UI (`/`)** — a dark-themed, single-page app (no framework):
 - **Resource profiles:** searchable table + detail panel (activities, median times, weekly calendar, top handoffs), "add to scenario".
 - **Scenario builder:** the settings above plus a live "your changes" list and an activity editor.
-- **Results:** before → after cards with colour-coded deltas, a "where cases wait" bar chart per activity, per-resource utilisation table, a *baseline fidelity check* (simulated vs. held-out median), all-metrics table, JSON/CSV download.
+- **Data explorer:** the log itself, before any simulation: work vs. waiting, idle time per task, most common paths, hour-of-week heatmap, case duration by month, handover matrix.
+- **Results:** before → after cards with colour-coded deltas, a "where cases wait" bar chart per activity, per-resource utilisation table, a *validation panel* (simulated baseline vs. held-out cases that had time to finish, per-activity idle time, who holds the queues), all-metrics table, JSON/CSV download.
 - **Experiment history:** every job with status, and "reuse these settings".
 - Progress bar with reconnect, draft changes saved in `localStorage`, mobile layout, and a "Model assumptions & data quality" panel.
 
@@ -313,7 +314,7 @@ Five distance metrics, all "lower is better", against the held-out test log:
 | +2 copies of `User_1` | mean cycle 337.0 h | 336.8 h | −0.05 % · `User_1` utilisation 49 % → 16 % · deadline met 22.37 % → 22.41 % |
 | +3 copies of the busiest resource, `User_87` | mean cycle 337.0 h | 336.4 h | −0.19 % · queue wait −0.9 % · deadline met 22.37 % → 22.39 % |
 
-**Sanity check of the baseline vs. history** (the Lab's own fidelity panel): simulated mean/median/p90 cycle time = 337 / 239 / 736 h vs. held-out real 281 / 219 / 602 h → **+20 % / +9 % / +22 %**. **That comparison is partly unfair:** the real log stops on 1 Feb 2017, so late-arriving held-out cases are cut short and look faster. Against a fair reference (held-out cases with ≥75 days of follow-up: 312 / 238 / 646 h) the simulation is **+8 % / +0.4 % / +14 %**. Median is right; the mean and tail are too slow because a few people build unrealistic multi-week queues. Details, week-by-week evidence and the reproducible script: `WORKBENCH.md` (“Is the ~20 % baseline gap real?”) and `scripts/check_baseline_censoring.py`.
+**Sanity check of the baseline vs. history** (the Lab's validation panel): simulated mean/median/p90 cycle time = 337 / 239 / 736 h. Against *all* held-out cases (281 / 219 / 602 h) that looks like +20 % / +9 % / +22 %, but that reference is unfair: the real log stops on 1 Feb 2017, so late-arriving cases are cut short. Against held-out cases that had enough time to finish (300 / 232 / 626 h, 3,937 cases) the baseline is **+12 % / +3 % / +18 %**. The median is right; the mean and tail are inflated mainly by **0.1 % of recorded task durations** (195 of 195,564 hold 38 % of all working time, up to 531 hours; probably work items left open). Capping them at 24 working hours turns the gap into -3 % / -5 % / -6 % and cuts the top-3 queue share from 48 % to 14 %. Details and reproducible scripts: `WORKBENCH.md` ("How well does the baseline match history?"), `scripts/check_baseline_censoring.py`, `scripts/diagnose_baseline_gap.py`.
 
 ### 6.3 What-if runs I made for this guide (ad-hoc, **not saved** to `runs/`; 30 days, 2 repetitions)
 
@@ -349,7 +350,7 @@ Baseline for these: mean cycle 327 h, mean queue wait 61.5 h, mean residual dela
 
 ## 8. Known limitations (say these first — it makes the rest credible)
 
-- **Not a forecast.** The Lab shows a ~20 % overshoot vs. history, but about half of that is the real log ending early. Against a fair reference the baseline is +8 % mean, ~0 % median, +14 % p90 (the tail is inflated by a few overloaded resources). Use it to compare scenarios, not to predict days.
+- **Not a forecast.** Against a fair reference the baseline is +12 % mean, +3 % median, +18 % p90 (the old +20 % included an unfair, cut-short reference). Most of the remaining overshoot comes from a few extreme recorded durations, not yet corrected in the model. Use it to compare scenarios, not to predict days.
 - **One task at a time, no parallel branches, no batching, fatigue or learning** — although 15.4 % of real BPI 2017 items overlap. (The research engine allows multitasking only for activities that historically never wait.)
 - **Calendars are inferred, in UTC.** "Earliest to latest observed hour per weekday" is not a roster; one Sunday evening event gives someone a Sunday window (e.g. `User_2`). Dutch local time is UTC+1/+2, so displayed hours are shifted.
 - **Cloning a resource copies the source's behaviour.** A real new hire wouldn't behave identically.
@@ -370,17 +371,17 @@ Baseline for these: mean cycle 327 h, mean queue wait 61.5 h, mean residual dela
 3. The stale experiment and its v1 model were removed. The v1 bug is now documented in `WORKBENCH.md` ("A bug caught by sanity-checking against the data"). The mislabelled "busiest resource" run (it cloned the alphabetically-first `User_1`, 740 events) was re-run with the real busiest, `User_87` (7,331 events): mean cycle time 337.0 h to 336.4 h (-0.19 %), queue wait -0.9 %.
 4. The README now leads with the findings, a results screenshot and the limitations.
 5. Scenario presets (pooled allocation, halve delays, remove/copy the busiest person, demand +50 %) were added to the Scenario builder.
+6. The **Data explorer** tab (work vs. waiting, idle time per task, common paths, hour-of-week heatmap, cases by month, handover matrix) and a **validation panel** on every result (fair reference, per-activity idle time, who holds the queues) were added; model version 3.
+7. **CI** runs the tests and a JavaScript syntax check on every push (`.github/workflows/ci.yml`).
 
 **Still open**
 - **Keys:** `.env` holds ~13 credentials for several providers. It is git-ignored, but rotate any that were ever pasted into a chat, log or screenshot, and delete the ones this project does not use (it needs only DeepSeek and optionally LangSmith).
 - **Calendars are shown in UTC.** Dutch local time is UTC+1/+2. Deliberately not changed: it would need a model version bump, a re-learn, and re-running every number here.
 - **BPIC_2019** is listed but disabled; keep it as a documented data-quality lesson.
 - **Research-engine cycle-time gap on BPI 2017** (section 6.1): try the paper's exact filtering, or trim the >7-day work items.
-- **CI:** GitHub Actions running `pytest` and `node --check`.
 - **Warm-up:** pre-load the queue so short-horizon backlog is meaningful.
 - **Auto-configuration instability** on LoanApp (report the spread or fix seeds).
-- **Exploration page** in the Lab (variant explorer, waiting-time chart, hour-of-week heatmap, handover network).
-- **Fidelity panel should use the fair reference** (held-out cases with enough follow-up). Tested and confirmed in `WORKBENCH.md`; not yet implemented because it changes the stored model (version bump, re-learn, re-run experiments). Also unexplained: real cycle times fall for cases arriving in Nov-Dec 2016 beyond what censoring can produce (seasonality vs drift cannot be separated with one year of data).
+- **Apply the duration fix to the model** (cap working time, treat the excess as delay) as a deliberate model-version change; it changes every headline number. Also unexplained: real cycle times fall for cases arriving in Nov-Dec 2016 beyond what cut-off can produce (seasonality vs drift cannot be separated with one year of data).
 
 ---
 
