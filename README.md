@@ -1,5 +1,7 @@
 # Process Lab / AgentSimulator
 
+[![CI](https://github.com/Saikrishna020/Process_Simulator-Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/Saikrishna020/Process_Simulator-Agent/actions/workflows/ci.yml)
+
 **Learn how an organisation really works from its event log — then simulate "what if?" and
 see which changes actually matter.**
 
