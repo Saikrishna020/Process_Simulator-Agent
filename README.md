@@ -21,8 +21,11 @@ Full analysis, numbers and reproduction steps: **[PROJECT_GUIDE.md](PROJECT_GUID
 
 ## Honest limitations
 
-- **Not a forecast.** With no changes, the simulated baseline is ~20% slower than held-out
-  history (mean cycle time 337 h vs 281 h). Use it to *compare* scenarios, not to predict days.
+- **Not a forecast.** With no changes the simulated baseline reads ~20% slower than held-out
+  history (337 h vs 281 h), but about half of that is the real log ending early, which cuts late
+  cases short. Against a fair reference the gap is +8% mean, ~0% median and +14% at the tail (a
+  few overloaded people build unrealistic queues). Use it to *compare* scenarios, not to predict
+  days. Evidence: [WORKBENCH.md](WORKBENCH.md) and `scripts/check_baseline_censoring.py`.
 - One task at a time per resource (15% of real work items overlap), no batching or fatigue.
 - Working hours are inferred from observed activity and shown in UTC.
 - Cloning a person copies the original's behaviour; a real new hire would differ.

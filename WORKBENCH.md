@@ -172,3 +172,67 @@ model version was bumped so v1 snapshots are refused).
 This also changes the business conclusion. Under v1, capacity looked like the bottleneck;
 under v2 about 78% of simulated cycle time is external delay, and adding or removing
 individual people barely moves cycle time (see `PROJECT_GUIDE.md`, sections 4 and 6).
+
+## Is the ~20% baseline gap real? (`scripts/check_baseline_censoring.py`)
+
+The results page compares the simulated baseline with the held-out historical median.
+On BPI 2017 that looked like a 20% overshoot (mean cycle time 337 h simulated vs 281 h
+real). Part of it is an artefact of how the real number is measured.
+
+**The artefact.** Held-out cases start after 19 Oct 2016, but the log stops on 1 Feb 2017.
+Cases arriving late have less time to finish, so they are cut short (right-censored) and look
+faster than they were. The simulator runs every case to completion. The real data shows it:
+
+| Arrival week of the held-out case | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Follow-up left before the log ends (days) | 98 | 91 | 84 | 77 | 70 | 63 | 56 | 49 | 42 | 35 | 29 |
+| Real mean cycle time (h) | 311 | 317 | 310 | 302 | 296 | 266 | 265 | 254 | 258 | 208 | 238 |
+
+**A fair reference.** Keep only held-out cases with at least 75 days of follow-up (2,817 of
+6,300). The result matches early-2016 training cases that had plenty of follow-up:
+
+| Real cycle time (h) | mean | median | p90 |
+| --- | --- | --- | --- |
+| As evaluated (all 6,300 held-out cases) | 281 | 219 | 602 |
+| Fair reference (>= 75 d follow-up, 2,817 cases) | 312 | 238 | 646 |
+| Early training cases, long follow-up (18,594 cases) | 312 | 234 | 641 |
+
+**Simulated vs real, like for like** (78-day window matching the held-out arrivals, 5 seeds):
+
+| Simulated (h) | mean | median | p90 |
+| --- | --- | --- | --- |
+| Run to completion (what the Lab reports) | 348 | 254 | 737 |
+| Cut at the real log end | 337 | 254 | 716 |
+
+| Gap of the simulation to... | mean | median | p90 |
+| --- | --- | --- | --- |
+| all held-out cases (what the UI shows) | +24% | +16% | +22% |
+| the fair reference | **+11%** | **+7%** | **+14%** |
+
+With the Lab's default 30-day horizon the simulated baseline is 337 / 239 / 736 h, i.e.
++8% / +0.4% / +14% against the fair reference (versus +20% / +9% / +22% against the
+censored one).
+
+**What this does and does not explain**
+
+- The log ending explains about half of the apparent gap. The rest is a real model error.
+- Pure right-censoring is too small to explain the whole drop in the real data. Applying the
+  same cut-off to the simulation lowers its mean by only ~11 h (3%), while the real mean
+  falls ~32 h (10%). Real cycle times also fall for cases arriving in weeks 5 to 8, where
+  almost every case has time to finish. With one year of data the log cannot separate a
+  seasonal or process change in Nov-Dec 2016 from other truncation effects. That remainder
+  (~20 h) is unexplained.
+- The remaining model error is in the tail and comes from a few overloaded people. Median
+  cycle time matches (+0.4% to +7%), but the mean and p90 are too high because a few
+  resources build multi-week queues under the fixed "preferred person" routing and inferred
+  calendars (the top five resources hold 40-60% of all simulated queue hours, and which five
+  varies by seed). Real staff clearly relieve such queues; the simulator does not. Pooled
+  routing removes them (queue wait -96%) but overshoots to ~270 h, below the fair reference of
+  312 h, so reality sits between the two allocation rules.
+- The simulated mean also grows with the window length (337 h at 30 days, 348 h at 78 days),
+  another sign of queues that accumulate.
+
+**Consequence for the UI.** The "baseline fidelity check" should compare against the fair
+reference (held-out cases with follow-up of at least the 99th-percentile training cycle time),
+not against every held-out case. This is not yet implemented because it changes the stored
+model and requires re-learning and re-running the saved experiments.

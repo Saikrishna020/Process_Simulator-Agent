@@ -313,7 +313,7 @@ Five distance metrics, all "lower is better", against the held-out test log:
 | +2 copies of `User_1` | mean cycle 337.0 h | 336.8 h | −0.05 % · `User_1` utilisation 49 % → 16 % · deadline met 22.37 % → 22.41 % |
 | +3 copies of the busiest resource, `User_87` | mean cycle 337.0 h | 336.4 h | −0.19 % · queue wait −0.9 % · deadline met 22.37 % → 22.39 % |
 
-**Sanity check of the baseline vs. history** (the Lab's own fidelity panel): simulated mean/median/p90 cycle time = 337 / 239 / 736 h vs. held-out real 281 / 219 / 602 h → the simulation is **+20 % / +9 % / +22 %** too slow. Directionally right, not calibrated. The UI warns about this.
+**Sanity check of the baseline vs. history** (the Lab's own fidelity panel): simulated mean/median/p90 cycle time = 337 / 239 / 736 h vs. held-out real 281 / 219 / 602 h → **+20 % / +9 % / +22 %**. **That comparison is partly unfair:** the real log stops on 1 Feb 2017, so late-arriving held-out cases are cut short and look faster. Against a fair reference (held-out cases with ≥75 days of follow-up: 312 / 238 / 646 h) the simulation is **+8 % / +0.4 % / +14 %**. Median is right; the mean and tail are too slow because a few people build unrealistic multi-week queues. Details, week-by-week evidence and the reproducible script: `WORKBENCH.md` (“Is the ~20 % baseline gap real?”) and `scripts/check_baseline_censoring.py`.
 
 ### 6.3 What-if runs I made for this guide (ad-hoc, **not saved** to `runs/`; 30 days, 2 repetitions)
 
@@ -349,7 +349,7 @@ Baseline for these: mean cycle 327 h, mean queue wait 61.5 h, mean residual dela
 
 ## 8. Known limitations (say these first — it makes the rest credible)
 
-- **Not a forecast.** The Lab's baseline overshoots historical cycle time by ~20 %; the UI and docs say so.
+- **Not a forecast.** The Lab shows a ~20 % overshoot vs. history, but about half of that is the real log ending early. Against a fair reference the baseline is +8 % mean, ~0 % median, +14 % p90 (the tail is inflated by a few overloaded resources). Use it to compare scenarios, not to predict days.
 - **One task at a time, no parallel branches, no batching, fatigue or learning** — although 15.4 % of real BPI 2017 items overlap. (The research engine allows multitasking only for activities that historically never wait.)
 - **Calendars are inferred, in UTC.** "Earliest to latest observed hour per weekday" is not a roster; one Sunday evening event gives someone a Sunday window (e.g. `User_2`). Dutch local time is UTC+1/+2, so displayed hours are shifted.
 - **Cloning a resource copies the source's behaviour.** A real new hire wouldn't behave identically.
@@ -380,7 +380,7 @@ Baseline for these: mean cycle 327 h, mean queue wait 61.5 h, mean residual dela
 - **Warm-up:** pre-load the queue so short-horizon backlog is meaningful.
 - **Auto-configuration instability** on LoanApp (report the spread or fix seeds).
 - **Exploration page** in the Lab (variant explorer, waiting-time chart, hour-of-week heatmap, handover network).
-- The 20 % baseline gap may partly come from the real log ending in Feb 2017 (unfinished slow cases are cut short in the held-out data). Untested.
+- **Fidelity panel should use the fair reference** (held-out cases with enough follow-up). Tested and confirmed in `WORKBENCH.md`; not yet implemented because it changes the stored model (version bump, re-learn, re-run experiments). Also unexplained: real cycle times fall for cases arriving in Nov-Dec 2016 beyond what censoring can produce (seasonality vs drift cannot be separated with one year of data).
 
 ---
 
