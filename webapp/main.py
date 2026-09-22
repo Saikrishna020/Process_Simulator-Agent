@@ -1,4 +1,5 @@
-"""FastAPI chat UI for the simulation agent.
+"""FastAPI backend for Process Lab: the resource workbench and, in the same page as a tab, the
+LangGraph simulation assistant.
 
 Run from the AgentSimulator repo root (both evaluate_run.py and simulate.py resolve paths
 relative to the process cwd, so this must be the working directory):
@@ -20,7 +21,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))  # so `import evaluate_run` / `import source...` resolve
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -116,7 +117,8 @@ def index():
 
 @app.get("/chat")
 def chat_index():
-    return FileResponse(str(static_dir / "index.html"))
+    # The assistant is now a tab inside Process Lab (same page, same design), not a separate app.
+    return RedirectResponse("/#assistant")
 
 
 if __name__ == "__main__":

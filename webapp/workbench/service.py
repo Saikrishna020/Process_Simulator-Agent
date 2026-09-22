@@ -53,6 +53,8 @@ class Workbench:
     def datasets(self):
         result = []
         for dataset in known_datasets():
+            if not dataset.user_facing:
+                continue
             path = self.raw_data / dataset.relative_log_path
             if path.exists():
                 result.append(dict(name=dataset.name, description=dataset.description,

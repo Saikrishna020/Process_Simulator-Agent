@@ -19,6 +19,7 @@ class DatasetEntry:
     start_timestamp: str
     end_timestamp: str
     description: str
+    user_facing: bool = True  # False: kept only as a fast, deterministic test fixture; hidden from the product
 
 
 _REGISTRY: dict[str, DatasetEntry] = {
@@ -33,6 +34,7 @@ _REGISTRY: dict[str, DatasetEntry] = {
             start_timestamp="start_time",
             end_timestamp="end_time",
             description="Small synthetic loan-application process log. Fastest dataset to simulate.",
+            user_facing=False,  # synthetic data; kept only so tests have a ~2-minute end-to-end run
         ),
         DatasetEntry(
             name="BPIC_2017_W",
@@ -59,6 +61,8 @@ _REGISTRY: dict[str, DatasetEntry] = {
 
 
 def known_datasets() -> list[DatasetEntry]:
+    """All registered datasets — includes internal test fixtures. Use for validation, not for
+    anything a user sees; user-facing listings should filter to `user_facing`."""
     return list(_REGISTRY.values())
 
 
@@ -67,8 +71,9 @@ def get_dataset(name: str) -> DatasetEntry | None:
 
 
 def available_datasets() -> list[DatasetEntry]:
-    """Registry entries whose backing file actually exists on disk right now."""
+    """User-facing registry entries whose backing file actually exists on disk right now."""
     settings = get_settings()
     return [
-        e for e in _REGISTRY.values() if (settings.raw_data_dir / e.relative_log_path).exists()
+        e for e in _REGISTRY.values()
+        if e.user_facing and (settings.raw_data_dir / e.relative_log_path).exists()
     ]
