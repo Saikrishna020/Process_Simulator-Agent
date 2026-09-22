@@ -5,23 +5,30 @@ const fmt = (n, digits = 1) => Number(n).toLocaleString(undefined, {maximumFract
 const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const state = {model: null, selected: null, changes: {}, clones: [], activities: {}, result: null, job: null, view: 'resources', pendingView: null};
 const fields = ['scenario-name', 'horizon', 'repetitions', 'demand', 'sla', 'routing', 'seed'];
-const titles = {resources: ['Resource profiles', 'Your process, understood.', 'Explore resource behavior learned from historical work.'], explore: ['Data explorer', 'What the history says.', 'How the work, the waiting and the people look in the historical log, before any simulation.'], scenario: ['Scenario builder', 'What would you change?', 'Build an alternative. Keep the historical baseline intact.'], results: ['Results', 'See what changes.', 'Compare outcomes across paired simulation repetitions.'], history: ['Experiment history', 'A record of your experiments.', 'Return to a result, reuse its settings, or export the event logs.'], assistant: ['Simulation assistant', 'Describe it. Confirm it. Run it.', 'A guided assistant for the research simulation engine, in plain English.']};
+const titles = {resources: ['Resource profiles', 'Your process, understood.', 'Explore resource behavior learned from historical work.'], explore: ['Data explorer', 'What the history says.', 'How the work, the waiting and the people look in the historical log, before any simulation.'], scenario: ['Scenario builder', 'What would you change?', 'Build an alternative. Keep the historical baseline intact.'], results: ['Results', 'See what changes.', 'Compare outcomes across paired simulation repetitions.'], history: ['Experiment history', 'A record of your experiments.', 'Return to a result, reuse its settings, or export the event logs.'], assistant: ['Simulation assistant', 'Understand your process.', 'Ask about historical data, resource patterns or a research simulation.']};
 function remember(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch {} }
 function recall(key) { try { return JSON.parse(localStorage.getItem(key)); } catch { return null; } }
 function notice(message = '') { $('notice').textContent = message; $('notice').hidden = !message; }
 async function api(path, options = {}) {
-  const response = await fetch('/api/workbench' + path, {headers: {'Content-Type': 'application/json'}, ...options});
+  return jsonRequest('/api/workbench' + path, options);
+}
+async function jsonRequest(path, options = {}) {
+  const response = await fetch(path, {headers: {'Content-Type': 'application/json'}, signal: AbortSignal.timeout(20000), ...options});
   let data;
   try { data = await response.json(); } catch { throw new Error('The server returned an unreadable response. Check that it is still running.'); }
   if (!response.ok) {
     const detail = data.detail;
-    throw new Error(Array.isArray(detail) ? detail.map(d => `${d.loc.slice(1).join('.')}: ${d.msg}`).join('; ') : detail || 'Request failed.');
+    const error = new Error(Array.isArray(detail) ? detail.map(d => `${d.loc.slice(1).join('.')}: ${d.msg}`).join('; ') : detail || 'Request failed.');
+    error.status = response.status;
+    throw error;
   }
   return data;
 }
 function safe(action) { return (...args) => { try { return Promise.resolve(action(...args)).catch(error => notice(error.message)); } catch(error) { notice(error.message); } }; }
 function navigate(view) {
+  if (!titles[view]) return;
   state.view = view;
+  history.replaceState(null, '', '#' + view);
   document.querySelectorAll('.view').forEach(el => el.hidden = el.id !== 'view-' + view);
   document.querySelectorAll('[data-view]').forEach(el => el.classList.toggle('active', el.dataset.view === view));
   const [crumb, title, subtitle] = titles[view];
@@ -31,6 +38,8 @@ function navigate(view) {
   const isAssistant = view === 'assistant';
   document.querySelector('.dataset-strip').hidden = isAssistant;
   $('run-top').hidden = isAssistant;
+  $('model-stats').hidden = isAssistant || !state.model;
+  $('assistant-context').textContent = state.model ? `Selected dataset: ${state.model.dataset}. Model ${state.model.model_id.slice(0, 8)}.` : 'No model selected. Learn a dataset in Resource profiles to ask data questions.';
   $('empty-state').hidden = isAssistant || !!state.model;
   $('workspace').hidden = isAssistant || !state.model;
   if (view === 'history') safe(renderHistory)();
@@ -74,6 +83,7 @@ async function loadModel(id, restore = true) {
   $('model-version').textContent = `${model.engine} · ${model.model_id.slice(0,8)}`;
   $('model-notes-content').innerHTML = `<p>Learned from ${esc(model.training_start.slice(0,10))} to ${esc(model.training_end.slice(0,10))}. ${fmt(model.excluded_boundary_cases,0)} cases spanning the temporal split were excluded.</p><p><strong>${fmt(model.overlap_event_pct)}% of training events overlap earlier work by the same resource.</strong> The scenario engine uses one task per resource at a time; this can affect baseline fidelity. ${fmt(model.zero_duration_pct)}% of source events have zero duration.</p><ul>${model.assumptions.map(a => `<li>${esc(a)}</li>`).join('')}</ul><p>Source SHA-256: <code>${esc(model.source_hash)}</code></p>`;
   renderResources(); renderProfile(); renderChanges(); busy(state.job);
+  navigate(state.view);
 }
 function renderResources() {
   if (!state.model) return;
@@ -309,7 +319,6 @@ safe(async () => {
   if(running) { busy(running); poll(running.id); }
   else { remember('process-lab-job',null); const last=history.find(j=>j.kind==='experiment' && j.status==='done' && j.model_id===state.model?.model_id); if(last) { state.result=await api('/experiments/'+last.id); renderResults(); } }
 })();
-if (location.hash === '#assistant') navigate('assistant');  // arrived via /chat, which redirects here
 
 function renderExplorer() {
   const box = $('explore-content'), e = state.model?.explore;
@@ -328,14 +337,14 @@ function renderExplorer() {
   const stats = [
     ['Cases', fmt(e.cases, 0), `${fmt(e.events, 0)} tasks · ${e.resource_count} people · ${e.activity_count} activities`],
     ['Median case duration', `${fmt(e.cycle_days.median)} days`, `mean ${fmt(e.cycle_days.mean)} · 90th percentile ${fmt(e.cycle_days.p90)} days`],
-    ['Hands-on work per case', `${fmt(e.median_touch_minutes, 0)} min`, 'median, all tasks added up'],
+    ['Recorded task time per case', `${fmt(e.median_touch_minutes, 0)} min`, 'median, all task durations added up'],
     ['Cases repeating a task', `${fmt(e.repeat_case_pct, 0)}%`, `${fmt(e.variant_count, 0)} distinct paths in ${fmt(e.cases, 0)} cases`]
   ].map(([label, value, help]) => `<div class="stat"><span class="label">${esc(label)}</span><strong>${esc(value)}</strong><small>${esc(help)}</small></div>`).join('');
   const variants = e.variants.map(v => { const seen = new Set(); return `<div style="margin:10px 0"><div class="chips">${v.steps.map(s => { const again = seen.has(s); seen.add(s); return `<span class="chip ${again ? 'repeat' : ''}">${esc(short(s))}</span>`; }).join('')}</div><div class="bar-line" style="grid-template-columns:1fr 110px;margin:0"><span class="track"><i class="fill" style="width:${v.share / e.variants[0].share * 100}%"></i></span><span class="val">${fmt(v.share * 100)}% · ${fmt(v.cases, 0)}</span></div></div>`; }).join('');
   box.innerHTML = `<div class="stats-grid">${stats}</div>
   <div class="explore-grid">
-    <section class="explore-card wide"><p class="eyebrow">WORK VS. WAITING</p><p class="big-claim">A typical case is open for <strong>${fmt(e.cycle_days.median)} days</strong> but needs only <strong>${fmt(e.median_touch_minutes, 0)} minutes</strong> of hands-on work: <strong>${fmt(touch)}%</strong> of elapsed time. The rest is waiting.</p>
-      <div class="share-bar" title="${fmt(touch)}% hands-on work"><span style="width:${Math.max(.5, touch)}%"></span></div><p class="subtle">Green: time someone was working on a case (all tasks, all cases). Empty: everything else. This is why adding people rarely changes cycle time in the simulator.</p></section>
+    <section class="explore-card wide"><p class="eyebrow">RECORDED TASK TIME</p><p class="big-claim">Median case duration: <strong>${fmt(e.cycle_days.median)} days</strong>. Median summed task duration per case: <strong>${fmt(e.median_touch_minutes, 0)} minutes</strong>.</p>
+      <div class="share-bar" title="${fmt(touch)}% recorded task duration"><span style="width:${Math.min(100, Math.max(.5, touch))}%"></span></div><p class="subtle">Across all cases, summed task durations are ${fmt(touch)}% of summed case durations. These timestamps can include off-hours and overlapping tasks; they do not measure active work or establish why a case waited. These are whole-log statistics, including held-out cases.</p></section>
     <section class="explore-card"><h2>Idle time before each task</h2><p class="subtle">Average hours between the previous task ending and this one starting. Median task length on the right.</p>
       ${shown.map(a => `<div class="bar-line"><span title="${fmt(a.events, 0)} tasks">${esc(short(a.name))}</span><span class="track"><i class="fill" style="width:${a.mean_gap_hours / maxGap * 100}%"></i></span><span class="val">${fmt(a.mean_gap_hours)} h · ${fmt(a.median_minutes)} min</span></div>`).join('')}${rare ? `<p class="subtle">${rare} rare ${rare === 1 ? 'activity' : 'activities'} (under 0.5% of tasks) not shown.</p>` : ''}</section>
     <section class="explore-card"><h2>Most common paths</h2><p class="subtle">The top ${e.variants.length} of ${fmt(e.variant_count, 0)} distinct paths cover ${fmt(e.top_variant_coverage_pct, 0)}% of cases. Highlighted steps are repeats.</p>${variants}</section>
@@ -349,13 +358,44 @@ function renderExplorer() {
 }
 
 // ---- Simulation assistant: chat UI for the LangGraph research-engine orchestrator (/api/sessions) ----
-const assistant = {threadId: null, ready: false, polling: false};
-function assistantMsg(role, text) {
+const assistant = {threadId: null, ready: false, initializing: false, polling: false, revision: -1, messages: []};
+function saveAssistant() { remember('process-lab-assistant', {threadId: assistant.threadId, revision: assistant.revision, messages: assistant.messages}); }
+// A minimal, dependency-free markdown-lite renderer for the assistant's own prose (bold, inline
+// code, bullet/numbered lists, short headings, paragraphs) — enough to structure what the LLM
+// writes without pulling in a markdown library for one small chat panel. Always escapes first,
+// then layers on trusted tags via regex, so nothing the model outputs can inject markup.
+function mdToHtml(text) {
+  const blocks = []; let list = null, para = [];
+  const flushPara = () => { if (para.length) { blocks.push({type: 'p', text: para.join(' ')}); para = []; } };
+  const flushList = () => { if (list) { blocks.push(list); list = null; } };
+  for (const raw of String(text ?? '').split('\n')) {
+    const line = raw.trim();
+    if (!line) { flushPara(); flushList(); continue; }
+    const heading = line.match(/^(#{1,4})\s+(.*)$/);
+    const bullet = line.match(/^[-*]\s+(.*)$/);
+    const numbered = line.match(/^\d+[.)]\s+(.*)$/);
+    if (heading) { flushPara(); flushList(); blocks.push({type: 'h', level: heading[1].length, text: heading[2]}); }
+    else if (bullet) { flushPara(); if (list?.type !== 'ul') { flushList(); list = {type: 'ul', items: []}; } list.items.push(bullet[1]); }
+    else if (numbered) { flushPara(); if (list?.type !== 'ol') { flushList(); list = {type: 'ol', items: []}; } list.items.push(numbered[1]); }
+    else { flushList(); para.push(line); }
+  }
+  flushPara(); flushList();
+  const inline = raw => esc(raw)
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(?<![*\w])\*([^*\n]+)\*(?!\w)/g, '<em>$1</em>');
+  return blocks.map(b => b.type === 'h' ? `<h5>${inline(b.text)}</h5>`
+    : b.type === 'ul' ? `<ul>${b.items.map(i => `<li>${inline(i)}</li>`).join('')}</ul>`
+    : b.type === 'ol' ? `<ol>${b.items.map(i => `<li>${inline(i)}</li>`).join('')}</ol>`
+    : `<p>${inline(b.text)}</p>`).join('') || '<p></p>';
+}
+function assistantMsg(role, text, save = true) {
   const el = document.createElement('div');
   el.className = 'msg ' + role;
-  el.textContent = text;
+  if (role === 'assistant') el.innerHTML = mdToHtml(text); else el.textContent = text;
   $('assistant-chat').appendChild(el);
   $('assistant-chat').scrollTop = $('assistant-chat').scrollHeight;
+  if (save) { assistant.messages.push({role, text}); saveAssistant(); }
 }
 function assistantTyping(show) {
   let el = document.getElementById('assistant-typing');
@@ -387,9 +427,17 @@ function assistantConfirmCard(payload) {
   const [confirmButton, cancelButton] = el.querySelectorAll('button');
   const decide = async approved => {
     confirmButton.disabled = true; cancelButton.disabled = true;
-    await fetch(`/api/sessions/${assistant.threadId}/confirm`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({approved})});
-    assistantTyping(true);
-    assistantPoll();
+    try {
+      await jsonRequest(`/api/sessions/${assistant.threadId}/confirm`, {method: 'POST', body: JSON.stringify({approved})});
+      el.remove();
+      assistantSetInputEnabled(false);
+      assistantTyping(true);
+      await assistantPoll();
+    } catch (error) {
+      assistantFailure(error);
+      confirmButton.disabled = false; cancelButton.disabled = false;
+      assistantSetInputEnabled(false);
+    }
   };
   confirmButton.onclick = () => decide(true);
   cancelButton.onclick = () => decide(false);
@@ -399,18 +447,34 @@ async function assistantPoll() {
   assistant.polling = true;
   try {
     while (true) {
-      const data = await (await fetch(`/api/sessions/${assistant.threadId}/status`)).json();
+      const data = await jsonRequest(`/api/sessions/${assistant.threadId}/status`);
       if (data.status === 'processing') { await new Promise(resolve => setTimeout(resolve, 1500)); continue; }
       assistantTyping(false);
-      (data.messages || []).forEach(m => assistantMsg(m.role, m.content));
+      document.querySelectorAll('.confirm-card').forEach(el => el.remove());
+      if (data.revision !== assistant.revision) {
+        (data.messages || []).forEach(m => assistantMsg(m.role, m.content));
+        if (data.status === 'error') assistantMsg('system', data.error || 'The request failed. Please retry.');
+        assistant.revision = data.revision;
+        saveAssistant();
+      }
       if (data.status === 'confirmation_required' && data.interrupt) assistantConfirmCard(data.interrupt);
-      if (data.status === 'error') assistantMsg('system', 'Error: ' + data.error);
-      assistantSetInputEnabled(true);
+      assistantSetInputEnabled(data.status !== 'confirmation_required');
+      $('assistant-retry').hidden = true;
       break;
     }
+  } catch (error) {
+    assistantFailure(error);
   } finally {
     assistant.polling = false;
   }
+}
+function assistantFailure(error) {
+  assistantTyping(false);
+  assistantMsg('system', error.name === 'TimeoutError' ? 'The server did not respond in time. Retry connection to check the request.' : error.message);
+  $('assistant-retry').hidden = false;
+  // The POST may have reached the server. Check its status before allowing a duplicate.
+  assistantSetInputEnabled(false);
+  if (error.status === 404) { assistant.ready = false; assistant.threadId = null; saveAssistant(); }
 }
 async function assistantSend() {
   const text = $('assistant-input').value.trim();
@@ -419,22 +483,45 @@ async function assistantSend() {
   $('assistant-input').value = '';
   assistantSetInputEnabled(false);
   assistantTyping(true);
-  await fetch(`/api/sessions/${assistant.threadId}/messages`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({text})});
-  assistantPoll();
+  try {
+    await jsonRequest(`/api/sessions/${assistant.threadId}/messages`, {method: 'POST', body: JSON.stringify({text, model_id: state.model?.model_id || null})});
+    await assistantPoll();
+  } catch (error) {
+    $('assistant-input').value = text;
+    assistantFailure(error);
+  }
 }
 async function initAssistant() {
   if (assistant.ready) { $('assistant-input').focus(); return; }
-  assistant.ready = true;
-  const response = await fetch('/api/sessions', {method: 'POST'});
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
-    $('assistant-chat').innerHTML = `<div class="assistant-key-missing">${esc(body.detail || 'The assistant could not start.')} The rest of Process Lab works without it.</div>`;
-    $('assistant-composer').hidden = true;
-    return;
+  if (assistant.initializing) return;
+  assistant.initializing = true;
+  assistantSetInputEnabled(false);
+  try {
+    const saved = recall('process-lab-assistant');
+    if (!assistant.messages.length && saved?.messages) {
+      assistant.messages = saved.messages;
+      assistant.messages.forEach(m => assistantMsg(m.role, m.text, false));
+      assistant.threadId = saved.threadId;
+      assistant.revision = saved.revision;
+    }
+    if (!assistant.threadId) {
+      const data = await jsonRequest('/api/sessions', {method: 'POST'});
+      assistant.threadId = data.thread_id;
+      assistant.revision = -1;
+      assistantMsg('system', 'Ask about the selected dataset or a resource, or ask me to run the research simulator. Research runs require confirmation. Staffing and delay changes are available in Scenario builder.');
+    }
+    assistant.ready = true;
+    saveAssistant();
+    await assistantPoll();
+    $('assistant-input').focus();
+  } catch (error) {
+    assistant.ready = false;
+    assistantFailure(error);
+  } finally {
+    assistant.initializing = false;
   }
-  const data = await response.json();
-  assistant.threadId = data.thread_id;
-  assistantMsg('system', 'Ask me to simulate a dataset, e.g. "simulate BPIC_2017_W with 5 runs". I will propose a plan and wait for your confirmation before running anything.');
-  $('assistant-input').focus();
 }
 $('assistant-composer').onsubmit = event => { event.preventDefault(); safe(assistantSend)(); };
+$('assistant-retry').onclick = () => assistant.ready ? assistantPoll() : initAssistant();
+window.addEventListener('hashchange', () => navigate(location.hash.slice(1) || 'resources'));
+if (titles[location.hash.slice(1)]) navigate(location.hash.slice(1));
