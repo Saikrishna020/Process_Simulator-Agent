@@ -14,3 +14,4 @@ class AgentState(TypedDict):
     confirmed: bool | None
     manifest: dict[str, Any] | None
     evaluation: dict[str, Any] | None
+    model_id: str | None

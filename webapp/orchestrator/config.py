@@ -55,5 +55,5 @@ def get_settings() -> Settings:
     except Exception as exc:  # pydantic ValidationError on missing required keys
         raise RuntimeError(
             "Missing/invalid configuration. Copy .env.example to .env and set at least "
-            f"deepseek_api_key. ({exc})"
+            "deepseek_api_key."
         ) from exc

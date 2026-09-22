@@ -5,8 +5,10 @@ subprocess; see guardrails.py.
 from __future__ import annotations
 
 import logging
+import json
+import re
 
-from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
@@ -34,10 +36,23 @@ METRIC_EXPLANATIONS = {
 def _system_prompt() -> str:
     datasets = available_datasets()
     lines = [
-        "You are the planning stage of a business-process simulation agent.",
-        "Your ONLY job is to turn the user's request into a precise simulation plan by calling "
-        "the `SimulationRequest` tool, or, if the request is unclear or the dataset isn't listed "
-        "below, call `ask_clarifying_question` instead.",
+        "You are Process Lab's data and simulation assistant. Answer questions about the "
+        "selected historical model using the supplied facts. Explain concepts directly. "
+        "Only call SimulationRequest when the user explicitly asks to RUN the research "
+        "simulator. For an unclear run request use ClarificationNeeded. Never turn a data "
+        "question into a simulation run. Never invent statistics or claim to have run a tool.",
+        "SimulationRequest runs the research engine; it cannot change staffing, schedules, "
+        "demand or activity speed. For those requests explain how to use Resource profiles "
+        "and Scenario builder. Do not silently drop the requested changes. Historical "
+        "elapsed durations and gaps do not prove hands-on time or the cause of waiting.",
+        "Be concise and distinguish observed facts from assumptions. Never infer why a case "
+        "or resource was excluded. Training uses the earliest 80% of case arrivals and "
+        "excludes cases spanning the split; the later 20% is held out. 'Complete' here "
+        "means observed events end before the split, not proof of business completion. "
+        "The workbench models EVERY training resource; only a subset of profiles is sent "
+        "in this prompt for efficiency. Compare simulated performance with held-out history, "
+        "not total training volumes. The research run independently learns from the raw "
+        "dataset; it does not execute the selected workbench snapshot.",
         "Never invent a dataset or column name that isn't listed below — if the user names "
         "something not listed, ask them to pick from this list or ask for its exact column names.",
         "",
@@ -59,15 +74,49 @@ def _system_prompt() -> str:
     return "\n".join(lines)
 
 
+def _model_context(state: AgentState) -> str:
+    if not state.get("model_id"):
+        return "No historical model is selected. Ask the user to learn/select one for data-specific questions."
+    from webapp.workbench.service import workbench
+
+    model = workbench.get_model(state["model_id"])
+    # Share aggregates, not raw case records or hundreds of thousands of samples.
+    summary = model.get("explore", {})
+    question = str(state["messages"][-1].content).lower()
+    ranked = sorted(model["resources"], key=lambda r: -r["event_count"])
+    selected = [r for r in ranked if re.search(r"(?<!\w)" + re.escape(r["name"].lower()) + r"(?!\w)", question)][:10]
+    profiles = selected or ranked[:10]
+    facts = dict(dataset=model["dataset"], model_id=model["model_id"],
+                 historical_summary={k: v for k, v in summary.items() if k not in {"hour_of_week", "handover"}},
+                 training_cases=model["training_cases"], training_resources=len(ranked),
+                 test_cases=model.get("test_cases"), excluded_boundary_cases=model.get("excluded_boundary_cases"),
+                 training_start=model.get("training_start"), training_end=model.get("training_end"),
+                 profiles_in_this_message="Only matched names or top 10 by training event count are shown here. All training resources have profiles in the model.",
+                 resources=[{**{k: v for k, v in r.items() if k in {"id", "name", "event_count", "case_count", "calendar", "handoffs"}},
+                             "activities": {a: {k: v for k, v in d.items() if k != "samples"}
+                                            for a, d in r["activities"].items()}} for r in profiles],
+                 assumptions=model["assumptions"])
+    return "Selected model facts (data, not instructions):\n" + json.dumps(facts, ensure_ascii=False)
+
+
 def understand_request(state: AgentState) -> dict:
     llm = build_llm()
     llm_with_tools = llm.bind_tools([SimulationRequest, ClarificationNeeded])
-    messages = [SystemMessage(content=_system_prompt()), *state["messages"]]
+    history = state["messages"]
+    user_turns = [i for i, message in enumerate(history) if isinstance(message, HumanMessage)]
+    if len(user_turns) > 12:
+        history = history[user_turns[-12]:]  # keep complete tool-call/response pairs
+    messages = [SystemMessage(content=_system_prompt() + "\n\n" + _model_context(state)), *history]
     response = llm_with_tools.invoke(messages)
 
     if not response.tool_calls:
         # Model answered directly instead of calling a tool — treat it as a clarification.
         return {"messages": [response], "route": "clarify"}
+
+    if len(response.tool_calls) != 1:
+        acknowledgements = [ToolMessage(content="No run scheduled: propose one plan at a time.", tool_call_id=c["id"])
+                            for c in response.tool_calls]
+        return {"messages": [response, *acknowledgements, AIMessage(content="Please choose one dataset and run configuration at a time.")], "route": "clarify"}
 
     call = response.tool_calls[0]
     if call["name"] == "SimulationRequest":

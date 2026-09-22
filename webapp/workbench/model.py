@@ -9,6 +9,9 @@ from bisect import bisect_right
 from datetime import datetime, timezone
 import hashlib
 import json
+import os
+import tempfile
+import time
 from pathlib import Path
 
 import numpy as np
@@ -21,9 +24,24 @@ MODEL_VERSION = 3
 
 def atomic_json(path: Path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(".tmp")
-    temporary.write_text(json.dumps(value, allow_nan=False, separators=(",", ":")), encoding="utf-8")
-    temporary.replace(path)
+    # A polling reader or antivirus can briefly hold the destination open on
+    # Windows. Retry the replace, never truncate the visible JSON in place.
+    content = json.dumps(value, allow_nan=False, separators=(",", ":"))
+    fd, name = tempfile.mkstemp(prefix=path.stem + "-", suffix=".tmp", dir=path.parent)
+    temporary = Path(name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            stream.write(content)
+        for attempt in range(80):
+            try:
+                temporary.replace(path)
+                break
+            except PermissionError:
+                if attempt == 79:
+                    raise
+                time.sleep(.025)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def file_hash(path):
@@ -119,7 +137,7 @@ def explore(df, bounds):
         variants=[dict(steps=list(v), cases=int(n), share=float(n / len(bounds))) for v, n in top.items()],
         activities=sorted(activities, key=lambda a: -a["events"]), hour_of_week=week,
         months=[dict(month=m, cases=int(r["size"]), median_cycle_days=float(r["median"])) for m, r in months.iterrows()],
-        handover=dict(names=busiest, matrix=matrix, same_resource_pct=float(100 * (moves.resource == moves.previous_resource).mean())))
+        handover=dict(names=busiest, matrix=matrix, same_resource_pct=float(100 * (moves.resource == moves.previous_resource).mean()) if len(moves) else 0.0))
 
 
 def discover(frame: pd.DataFrame, dataset: str, model_id: str, source_hash: str) -> dict:

@@ -53,6 +53,7 @@ app.include_router(workbench_router)
 
 class MessageIn(BaseModel):
     text: str = Field(min_length=1, max_length=MAX_MESSAGE_LENGTH)
+    model_id: str | None = Field(default=None, pattern=r"^[a-f0-9]{24}$")
 
 
 class ConfirmIn(BaseModel):
@@ -62,7 +63,9 @@ class ConfirmIn(BaseModel):
 @app.post("/api/sessions")
 def create_session():
     try:
-        get_settings()
+        settings = get_settings()
+        if not settings.deepseek_api_key.get_secret_value().strip():
+            raise RuntimeError("Missing key")
         setup_logging()
         configure_langsmith()
     except RuntimeError:
@@ -76,7 +79,17 @@ def post_message(thread_id: str, body: MessageIn):
         jobs.get_status(thread_id)
     except KeyError:
         raise HTTPException(404, "Unknown session")
-    jobs.submit_message(thread_id, body.text)
+    if not body.text.strip():
+        raise HTTPException(422, "Enter a message.")
+    if body.model_id:
+        try:
+            workbench.get_model(body.model_id)
+        except (FileNotFoundError, ValueError):
+            raise HTTPException(422, "The selected model is unavailable. Learn the dataset again.")
+    try:
+        jobs.submit_message(thread_id, body.text, body.model_id)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
     return {"status": "processing"}
 
 
@@ -88,7 +101,10 @@ def post_confirm(thread_id: str, body: ConfirmIn):
         raise HTTPException(404, "Unknown session")
     if session.status != "confirmation_required":
         raise HTTPException(409, "No confirmation is pending for this session")
-    jobs.submit_confirmation(thread_id, body.approved)
+    try:
+        jobs.submit_confirmation(thread_id, body.approved)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
     return {"status": "processing"}
 
 
@@ -103,6 +119,7 @@ def get_status(thread_id: str):
         "interrupt": session.interrupt_payload,
         "messages": session.last_messages,
         "error": session.error,
+        "revision": session.revision,
     }
 
 
