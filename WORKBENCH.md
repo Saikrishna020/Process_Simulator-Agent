@@ -2,7 +2,8 @@
 
 Process Lab learns resource profiles from an event log and compares a historical
 baseline with a changed resource setup. It runs locally, without an LLM API key.
-The existing research simulator and DeepSeek chat remain available at `/chat`.
+The research simulator's chat agent lives in the same app now, as the **Simulation assistant**
+tab in the sidebar (`/chat` still redirects there for old links).
 
 ## Start
 
@@ -34,8 +35,11 @@ job lock are process-local. This is a local, single-operator application.
    Export JSON and a CSV for any repetition. Experiment history can restore the
    settings of a saved comparison. Draft changes survive a page refresh locally.
 
-LoanApp is also supported. The current BPI 2019 CSV has zero-duration events and
-is disabled in the selector because it cannot teach resource processing capacity.
+BPIC_2017_W is the only dataset offered here. The current BPI 2019 CSV has
+zero-duration events and is disabled in the selector because it cannot teach resource
+processing capacity. LoanApp (the paper's small synthetic log) is registered but not
+offered in the product — real data makes a stronger case, and LoanApp is kept only as a
+fast, deterministic fixture for the test suite.
 Arbitrary file upload and process-step creation/removal are not part of this version.
 
 ## Model and simulation method
@@ -264,3 +268,35 @@ So most of the remaining overshoot comes from 0.1% of the data, not from the met
 - **Sticky routing still matters.** Historical routing is too rigid (a person's queue never spills
   over), pooled routing is too flexible (it undershoots the real 300 h). Reality sits between them.
 - **The Nov-Dec decline** in real case durations is unexplained.
+
+## Bugs found and fixed after using the product like a user
+
+Reading through the app rather than just the code surfaced three real bugs:
+
+1. **"Learn resource profiles" always jumped back to Resource profiles.** Clicking it from the
+   Data explorer (or any tab) silently discarded whatever you were looking at and navigated to
+   Resource profiles once the model finished loading — the Data explorer looked broken (it never
+   showed anything) because you were never actually left on it. Fixed by remembering which tab the
+   learn was launched from and returning there — but only if you're still on it: if a background
+   learn finishes while you've since moved to a different tab (e.g. you switched to the assistant
+   mid-conversation), it now updates quietly instead of pulling you away (`workbench.js`,
+   `state.pendingView`).
+2. **The chat page looked and lived like a different product.** It was a separate HTML document
+   with its own dark theme, unrelated to Process Lab's design, reachable only via an external link.
+   It is now the **Simulation assistant** tab inside the same page — same sidebar, same cards,
+   same colours. `/chat` still resolves, as a redirect (`webapp/main.py`, `webapp/static/index.html`
+   removed).
+3. **The assistant never answered.** A message just sat at "processing" and then failed with
+   "Connection error." The DeepSeek key itself was fine (confirmed by calling it directly from a
+   clean shell); the already-running server process had inherited a stale local proxy setting
+   (probably from a VPN/corporate tool active when it was first started) that has since gone away.
+   Restarting the server picked up a clean environment and fixed it — not a code bug, but worth
+   documenting because "the assistant is silently down" has no other visible symptom. If this
+   happens again: check `runs/workbench-server.err.log` for `ProxyError`/connection failures around
+   `openai._base_client`, and restart the server.
+
+LoanApp was also removed from every place a user sees it (Process Lab's dataset list, the
+assistant's dataset list, the docs) — it's a synthetic log that doesn't belong in a product about
+real data. It stays registered internally (`user_facing=False` in `dataset_registry.py`) because
+the test suite depends on it for a fast (~2 min), deterministic end-to-end run; BPI 2017 is too
+large for that.

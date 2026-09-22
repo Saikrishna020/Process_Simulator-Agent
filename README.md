@@ -9,6 +9,8 @@ see which changes actually matter.**
 
 ![Data explorer: work vs. waiting, common paths, working rhythm, handovers](docs/screenshots/explorer.png)
 
+![Simulation assistant: the research engine, as a plain-English chat tab inside the same app](docs/screenshots/assistant.png)
+
 ## What I found (BPI Challenge 2017, 31,500 loan applications, 149 people)
 
 1. **A typical case takes 9.7 days but needs only ~25 minutes of hands-on work** — 0.9% of
@@ -45,6 +47,9 @@ cd AgentSimulator
 Pick **BPIC_2017_W** → **Learn resource profiles** → look around the **Data explorer** → open **Scenario builder** and start from a
 preset (pooled allocation, halve delays, remove the busiest person, demand +50%). Each run
 compares a paired baseline and scenario and saves settings, seeds and downloadable event logs.
+Or click **Simulation assistant** in the sidebar and just describe what you want in plain English
+— it plans a run of the research engine, waits for your confirmation, then reports how realistic
+the result is. Same app, same page, one design — not a separate tool bolted on the side.
 See [WORKBENCH.md](WORKBENCH.md) for the method, assumptions, API, and a write-up of a bug caught
 by sanity-checking the model against held-out data.
 
@@ -52,17 +57,21 @@ by sanity-checking the model against held-out data.
 
 | Part | What it does | LLM key? |
 | --- | --- | --- |
-| **Process Lab** (`webapp/workbench/`, served at `/`) | Learns resource profiles from history, runs paired baseline/scenario comparisons. Empirical trace-resampling engine, inspectable and fast (~10 s per comparison). | No |
+| **Process Lab** (`webapp/workbench/`, tabs "Resource profiles" → "Experiment history") | Learns resource profiles from history, runs paired baseline/scenario comparisons. Empirical trace-resampling engine, inspectable and fast (~10 s per comparison). | No |
 | **Research engine** (`source/`, `simulate.py`) | Multi-agent simulator from the AgentSimulator paper; each resource is an agent. Scored against held-out data with five distance metrics (`evaluate_run.py`). | No |
-| **Chat agent** (`webapp/orchestrator/`, at `/chat`) | LangGraph + DeepSeek agent that turns "simulate LoanApp with 3 runs" into a validated, human-confirmed run of the research engine. See [ORCHESTRATOR.md](ORCHESTRATOR.md). | Yes |
+| **Simulation assistant** (`webapp/orchestrator/`, the "Simulation assistant" tab) | LangGraph + DeepSeek agent that turns "simulate BPIC_2017_W with 3 runs" into a validated, human-confirmed run of the research engine. Same page, same design as Process Lab. See [ORCHESTRATOR.md](ORCHESTRATOR.md). | Yes |
 
-Research engine scores (10 simulations, lower is better) — LoanApp reproduces the paper; BPI 2017
-is comparable on control-flow but ~3× worse on cycle-time distance (different log extraction, see
-the guide):
+All three share one FastAPI app and one page (`webapp/main.py`, `webapp/static/workbench.*`) — there
+is no separate chat UI to keep visually in sync; `/chat` is kept only as a redirect for old links.
+
+Research engine scores (10 simulations, lower is better) — BPI 2017 is comparable to the paper on
+control-flow but ~3× worse on cycle-time distance (different log extraction, see the guide). LoanApp
+is a small synthetic log kept only as a fast, deterministic fixture for the test suite (not offered
+in the product — real data tells a better story) and reproduces the paper closely:
 
 | Log | NGD | AEDD | CEDD | REDD | CTDD |
 | --- | --- | --- | --- | --- | --- |
-| LoanApp (this repo / paper) | 0.080 / 0.07 | 2.97 / 2.78 | 0.221 / 0.21 | 1.38 / 1.34 | 1.60 / 1.49 |
+| LoanApp (this repo / paper) — internal test fixture | 0.080 / 0.07 | 2.97 / 2.78 | 0.221 / 0.21 | 1.38 / 1.34 | 1.60 / 1.49 |
 | BPI 2017 W (this repo / paper) | 0.225 / 0.30 | 234.6 / 221 | 2.37 / 1.64 | 66.9 / 26.0 | 69.8 / 22.8 |
 
 ## Engineering notes

@@ -20,7 +20,7 @@
 |---|---|---|
 | **Research engine** (`source/`) | A multi-agent simulator from the *AgentSimulator* paper (Kirchdorfer et al., 2024). Each employee is a software agent. Scored against held-out real data. | No |
 | **Process Lab workbench** (`webapp/workbench/`, served at `/`) | *Your* addition: a fast, inspectable "what-if" tool with a browser UI. | No |
-| **Chat orchestrator** (`webapp/orchestrator/`, served at `/chat`) | A LangGraph + DeepSeek agent that turns "simulate LoanApp with 3 runs" into a validated, human-approved run of the research engine. | Yes (DeepSeek key) |
+| **Simulation assistant** (`webapp/orchestrator/`, the "Simulation assistant" sidebar tab) | A LangGraph + DeepSeek agent that turns "simulate BPIC_2017_W with 3 runs" into a validated, human-approved run of the research engine. Same page and design as the other two — one product, not a bolted-on chat window. | Yes (DeepSeek key) |
 
 **The five things the data actually says** (§3, §4):
 
@@ -85,6 +85,7 @@ A simulation is only useful if you can trust the baseline. Hence the standard re
 ## 2. The datasets
 
 Three logs are registered (`webapp/orchestrator/dataset_registry.py`). One file each in `raw_data/`.
+Only BPIC_2017_W is offered in the product; LoanApp is kept registered but hidden (`user_facing=False`) as a fast, deterministic fixture the test suite runs an actual end-to-end simulation against — real data tells the better story here, and BPI 2017 is too large for a ~2-minute test.
 
 | | **LoanApp** | **BPIC_2017_W** | **BPIC_2019** |
 |---|---|---|---|
@@ -194,7 +195,7 @@ AgentSimulator/
 │   ├── main.py          FastAPI app: "/" = Process Lab, "/chat" = orchestrator
 │   ├── workbench/       PROCESS LAB backend (model.py, simulation.py, service.py, api.py, schemas.py, calendar.py)
 │   ├── orchestrator/    CHAT AGENT (LangGraph graph, guardrails, tools, jobs)
-│   └── static/          workbench.html/css/js (Process Lab UI) + index.html (chat UI)
+│   └── static/          workbench.html/css/js — one app: Process Lab + the Simulation assistant tab
 ├── runs/                run manifests, LangGraph checkpoints, workbench/{models,jobs,experiments}
 ├── simulated_data/      research engine outputs (train/test split, simulated logs)
 ├── tests/               28 tests
@@ -373,6 +374,22 @@ Baseline for these: mean cycle 327 h, mean queue wait 61.5 h, mean residual dela
 5. Scenario presets (pooled allocation, halve delays, remove/copy the busiest person, demand +50 %) were added to the Scenario builder.
 6. The **Data explorer** tab (work vs. waiting, idle time per task, common paths, hour-of-week heatmap, cases by month, handover matrix) and a **validation panel** on every result (fair reference, per-activity idle time, who holds the queues) were added; model version 3.
 7. **CI** runs the tests and a JavaScript syntax check on every push (`.github/workflows/ci.yml`).
+8. **LoanApp removed from the product.** It no longer appears in Process Lab's dataset list or the
+   assistant's dataset list — a synthetic log doesn't belong in a real-data story. It stays
+   registered internally (`user_facing=False`) because the test suite needs a fast, deterministic
+   dataset for its end-to-end run; BPI 2017 is far too large for that. See `WORKBENCH.md`.
+9. **The Simulation assistant is now one product with Process Lab**, not a separate page. It is a
+   sidebar tab in the same single-page app, sharing the same design system; `/chat` redirects there.
+   `webapp/static/index.html` (the old standalone dark-themed page) was removed.
+10. **Two real bugs found by using the app, not just reading the code** (both documented with more
+    detail in `WORKBENCH.md`): (a) "Learn resource profiles" always force-navigated to Resource
+    profiles regardless of which tab you were on, which made the newly-added Data explorer look
+    broken — it never showed anything because you were always bounced off it; fixed to return to
+    the tab you launched it from, but only if you're still there (a background completion no longer
+    yanks you off a tab you've since moved to, e.g. mid-conversation with the assistant). (b) The
+    assistant never replied to any message ("Connection error" after a long hang) — not a code bug:
+    the already-running server process had inherited a stale local proxy setting from an earlier
+    VPN/corporate-tool session; restarting the server with a clean environment fixed it.
 
 **Still open**
 - **Keys:** `.env` holds ~13 credentials for several providers. It is git-ignored, but rotate any that were ever pasted into a chat, log or screenshot, and delete the ones this project does not use (it needs only DeepSeek and optionally LangSmith).

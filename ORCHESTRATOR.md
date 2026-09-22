@@ -1,17 +1,18 @@
 # AgentSimulator Orchestrator
 
 A LangGraph agent (DeepSeek as the LLM, LangSmith for tracing) that turns natural-language
-requests into safely-executed runs of the existing `simulate.py` pipeline, with a small
-FastAPI + vanilla-JS chat UI on top.
+requests into safely-executed runs of the existing `simulate.py` pipeline. It is the
+**Simulation assistant** tab inside Process Lab — same page, same design, one FastAPI backend
+(`webapp/main.py`) — not a separate app.
 
 The simulation logic (`source/`) is based on the research implementation. This layer
-plans, validates, confirms, executes and reports its runs. The separate Process Lab
-scenario workbench is documented in [WORKBENCH.md](WORKBENCH.md).
+plans, validates, confirms, executes and reports its runs. The empirical scenario workbench
+it sits alongside is documented in [WORKBENCH.md](WORKBENCH.md).
 
 ## Architecture
 
 ```
- browser (webapp/static/index.html)
+ browser (webapp/static/workbench.js — Simulation assistant tab)
     │  POST /api/sessions            → create a session (thread_id)
     │  POST /api/sessions/{id}/messages  → send a chat message
     │  GET  /api/sessions/{id}/status    → poll for the result
@@ -39,9 +40,9 @@ filesystem or subprocess call without first passing `guardrails.validate_request
 ## Guardrails
 
 1. **Secrets** come from environment configuration / `.env` (gitignored, untracked).
-   Chat session creation fails if `deepseek_api_key` is missing; the scenario workbench
-   does not require it. Log records are scrubbed of any known secret value
-   (`logging_utils.SecretRedactionFilter`).
+   Session creation fails if `deepseek_api_key` is missing (the assistant tab shows this inline;
+   the rest of Process Lab does not require it). Log records are scrubbed of any known secret
+   value (`logging_utils.SecretRedactionFilter`).
 2. **Path containment**: every dataset path is resolved against `raw_data/` and rejected if it
    would resolve outside it (`guardrails._resolve_within_raw_data`) — no `..` traversal, no
    absolute paths elsewhere.
@@ -70,10 +71,12 @@ cp .env.example .env        # then fill in deepseek_api_key (and LangSmith keys,
 ./.venv/Scripts/python.exe -m webapp.main
 ```
 
-Open http://127.0.0.1:8000/chat and ask it to simulate a dataset, e.g. *"simulate LoanApp with 3 runs"*.
-Currently registered/available datasets: LoanApp, BPIC_2017_W, BPIC_2019 (see
-`webapp/orchestrator/dataset_registry.py` — only datasets whose raw file actually exists under
-`raw_data/` are offered).
+Open http://127.0.0.1:8000, choose **Simulation assistant** in the sidebar, and ask it to
+simulate a dataset, e.g. *"simulate BPIC_2017_W with 3 runs"*. (`/chat` still works — it redirects
+here.) Currently offered: BPIC_2017_W, BPIC_2019 (see `webapp/orchestrator/dataset_registry.py` —
+only `user_facing` datasets whose raw file actually exists under `raw_data/` are offered).
+LoanApp stays registered but hidden: it is the small, fast, deterministic fixture the test suite
+runs an actual end-to-end simulation against (~2 min), which BPI 2017 is far too large for.
 
 ## Tests
 
@@ -83,8 +86,9 @@ Currently registered/available datasets: LoanApp, BPIC_2017_W, BPIC_2019 (see
 
 - `test_guardrails.py` — path traversal, bad columns, out-of-range `num_simulations`, all rejected
   deterministically, no LLM involved.
-- `test_tools.py` — a real end-to-end `simulate.py` run against the small LoanApp dataset, plus
-  `evaluate_run.evaluate()` reuse. No LLM involved (~2 min).
+- `test_tools.py` — a real end-to-end `simulate.py` run against the small LoanApp dataset (an
+  internal fixture, not offered to users — see above), plus `evaluate_run.evaluate()` reuse.
+  No LLM involved (~2 min).
 - `test_graph_smoke.py` — full graph routing (propose/clarify/validate/confirm/decline/run/
   summarize) against a scripted fake LLM — no real DeepSeek calls, no cost.
 
