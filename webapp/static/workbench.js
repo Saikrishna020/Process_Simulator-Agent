@@ -3,9 +3,9 @@ const $ = id => document.getElementById(id);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmt = (n, digits = 1) => Number(n).toLocaleString(undefined, {maximumFractionDigits: digits});
 const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const state = {model: null, selected: null, changes: {}, clones: [], activities: {}, result: null, job: null, view: 'resources'};
+const state = {model: null, selected: null, changes: {}, clones: [], activities: {}, result: null, job: null, view: 'resources', pendingView: null};
 const fields = ['scenario-name', 'horizon', 'repetitions', 'demand', 'sla', 'routing', 'seed'];
-const titles = {resources: ['Resource profiles', 'Your process, understood.', 'Explore resource behavior learned from historical work.'], explore: ['Data explorer', 'What the history says.', 'How the work, the waiting and the people look in the historical log, before any simulation.'], scenario: ['Scenario builder', 'What would you change?', 'Build an alternative. Keep the historical baseline intact.'], results: ['Results', 'See what changes.', 'Compare outcomes across paired simulation repetitions.'], history: ['Experiment history', 'A record of your experiments.', 'Return to a result, reuse its settings, or export the event logs.']};
+const titles = {resources: ['Resource profiles', 'Your process, understood.', 'Explore resource behavior learned from historical work.'], explore: ['Data explorer', 'What the history says.', 'How the work, the waiting and the people look in the historical log, before any simulation.'], scenario: ['Scenario builder', 'What would you change?', 'Build an alternative. Keep the historical baseline intact.'], results: ['Results', 'See what changes.', 'Compare outcomes across paired simulation repetitions.'], history: ['Experiment history', 'A record of your experiments.', 'Return to a result, reuse its settings, or export the event logs.'], assistant: ['Simulation assistant', 'Describe it. Confirm it. Run it.', 'A guided assistant for the research simulation engine, in plain English.']};
 function remember(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch {} }
 function recall(key) { try { return JSON.parse(localStorage.getItem(key)); } catch { return null; } }
 function notice(message = '') { $('notice').textContent = message; $('notice').hidden = !message; }
@@ -26,8 +26,16 @@ function navigate(view) {
   document.querySelectorAll('[data-view]').forEach(el => el.classList.toggle('active', el.dataset.view === view));
   const [crumb, title, subtitle] = titles[view];
   $('breadcrumb').textContent = crumb; $('page-title').textContent = title; $('page-subtitle').textContent = subtitle;
+  // The assistant is a separate tool (the research engine, not the workbench): hide the dataset/
+  // run-comparison chrome that only applies to the empirical workbench above it.
+  const isAssistant = view === 'assistant';
+  document.querySelector('.dataset-strip').hidden = isAssistant;
+  $('run-top').hidden = isAssistant;
+  $('empty-state').hidden = isAssistant || !!state.model;
+  $('workspace').hidden = isAssistant || !state.model;
   if (view === 'history') safe(renderHistory)();
   if (view === 'explore') renderExplorer();
+  if (view === 'assistant') safe(initAssistant)();
 }
 function saveDraft() {
   if (state.model) remember('process-lab-draft', {model_id: state.model.model_id, changes: state.changes, clones: state.clones, activities: state.activities, fields: Object.fromEntries(fields.map(f => [f, $(f).value]))});
@@ -149,7 +157,16 @@ async function poll(id) {
     } while (['queued','running'].includes(job.status));
     busy(null); remember('process-lab-job', null); $('job-panel').hidden = true;
     if (job.status === 'error') throw new Error(job.error);
-    if (job.kind === 'discover') { await loadModel(job.model_id); navigate('resources'); }
+    if (job.kind === 'discover') {
+      const target = state.pendingView || 'resources';
+      state.pendingView = null;
+      await loadModel(job.model_id);
+      // Only jump the user to the tab this was launched from if they're still there — a
+      // background learn shouldn't yank them off a different tab they've since moved to
+      // (e.g. mid-conversation with the assistant).
+      if (state.view === target) navigate(target);
+      else notice('Resource profiles updated in the background.');
+    }
     else { await showResult(job.id); }
   } catch (error) {
     notice(error.message);
@@ -270,6 +287,7 @@ $('history-list').onclick = safe(async event => {
 $('learn').onclick = safe(async () => {
   if (state.job) return;
   notice(); $('learn').disabled=true;
+  state.pendingView = state.view === 'resources' ? null : state.view;  // stay on the current tab once the model is ready, unless it's already 'resources'
   try { const job=await api('/models',{method:'POST',body:JSON.stringify({dataset:$('dataset').value})}); busy(job); poll(job.id); }
   catch(error) { busy(null); throw error; }
 });
@@ -279,12 +297,19 @@ safe(async () => {
   $('dataset').innerHTML=datasets.map(d=>`<option value="${esc(d.name)}" ${d.supported ? '' : 'disabled'}>${esc(d.name)}${d.supported ? '' : ' · missing durations'}</option>`).join('');
   if(datasets.some(d=>d.name==='BPIC_2017_W')) $('dataset').value='BPIC_2017_W';
   const history=await api('/jobs');
-  const saved=recall('process-lab-model') || history.find(j=>j.kind==='discover' && j.status==='done' && j.dataset===$('dataset').value)?.model_id;
-  if(saved) { try { await loadModel(saved); } catch(error) { notice('Saved model unavailable. Learn the dataset again.'); } }
+  const remembered=recall('process-lab-model');
+  const candidates=[remembered, ...history.filter(j=>j.kind==='discover' && j.status==='done' && j.dataset===$('dataset').value).map(j=>j.model_id)].filter(Boolean);
+  let loaded=false;
+  for (const id of [...new Set(candidates)]) {
+    try { await loadModel(id); loaded=true; break; }
+    catch (error) { /* an older model version, or the file is gone — try the next candidate */ }
+  }
+  if(!loaded && candidates.length) { remember('process-lab-model',null); notice('The saved model is no longer available (it may be an older version). Click "Learn resource profiles" to rebuild it — this takes under a minute.'); }
   const running=history.find(j=>['queued','running'].includes(j.status));
   if(running) { busy(running); poll(running.id); }
   else { remember('process-lab-job',null); const last=history.find(j=>j.kind==='experiment' && j.status==='done' && j.model_id===state.model?.model_id); if(last) { state.result=await api('/experiments/'+last.id); renderResults(); } }
 })();
+if (location.hash === '#assistant') navigate('assistant');  // arrived via /chat, which redirects here
 
 function renderExplorer() {
   const box = $('explore-content'), e = state.model?.explore;
@@ -322,3 +347,94 @@ function renderExplorer() {
       <div class="heat matrix" style="grid-template-columns:64px repeat(${names.length},minmax(18px,1fr))">${matrixHead}${matrix}</div></section>
   </div>`;
 }
+
+// ---- Simulation assistant: chat UI for the LangGraph research-engine orchestrator (/api/sessions) ----
+const assistant = {threadId: null, ready: false, polling: false};
+function assistantMsg(role, text) {
+  const el = document.createElement('div');
+  el.className = 'msg ' + role;
+  el.textContent = text;
+  $('assistant-chat').appendChild(el);
+  $('assistant-chat').scrollTop = $('assistant-chat').scrollHeight;
+}
+function assistantTyping(show) {
+  let el = document.getElementById('assistant-typing');
+  if (show && !el) {
+    el = document.createElement('div'); el.id = 'assistant-typing'; el.className = 'assistant-typing'; el.textContent = 'Thinking…';
+    $('assistant-chat').appendChild(el);
+  } else if (!show && el) {
+    el.remove();
+  }
+  $('assistant-chat').scrollTop = $('assistant-chat').scrollHeight;
+}
+function assistantSetInputEnabled(enabled) {
+  $('assistant-input').disabled = !enabled;
+  $('assistant-send').disabled = !enabled;
+}
+function assistantConfirmCard(payload) {
+  const el = document.createElement('div');
+  el.className = 'confirm-card';
+  const cols = payload.columns || {};
+  const mode = payload.determine_automatically ? 'auto-determined' : `central orchestration=${payload.central_orchestration}, extraneous delays=${payload.extr_delays}`;
+  el.innerHTML = `<h3>Confirm this simulation run</h3><table>
+    <tr><td>Dataset</td><td class="v">${esc(payload.dataset_name)}</td></tr>
+    <tr><td>Simulations</td><td class="v">${esc(String(payload.num_simulations))}</td></tr>
+    <tr><td>Mode</td><td class="v">${esc(mode)}</td></tr>
+    <tr><td>Columns</td><td class="v">${esc([cols.case_id, cols.activity_name, cols.resource, cols.start_timestamp, cols.end_timestamp].filter(Boolean).join(' · '))}</td></tr>
+  </table><div class="row"><button type="button" class="primary">Confirm & run</button><button type="button" class="secondary">Cancel</button></div>`;
+  $('assistant-chat').appendChild(el);
+  $('assistant-chat').scrollTop = $('assistant-chat').scrollHeight;
+  const [confirmButton, cancelButton] = el.querySelectorAll('button');
+  const decide = async approved => {
+    confirmButton.disabled = true; cancelButton.disabled = true;
+    await fetch(`/api/sessions/${assistant.threadId}/confirm`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({approved})});
+    assistantTyping(true);
+    assistantPoll();
+  };
+  confirmButton.onclick = () => decide(true);
+  cancelButton.onclick = () => decide(false);
+}
+async function assistantPoll() {
+  if (assistant.polling) return;
+  assistant.polling = true;
+  try {
+    while (true) {
+      const data = await (await fetch(`/api/sessions/${assistant.threadId}/status`)).json();
+      if (data.status === 'processing') { await new Promise(resolve => setTimeout(resolve, 1500)); continue; }
+      assistantTyping(false);
+      (data.messages || []).forEach(m => assistantMsg(m.role, m.content));
+      if (data.status === 'confirmation_required' && data.interrupt) assistantConfirmCard(data.interrupt);
+      if (data.status === 'error') assistantMsg('system', 'Error: ' + data.error);
+      assistantSetInputEnabled(true);
+      break;
+    }
+  } finally {
+    assistant.polling = false;
+  }
+}
+async function assistantSend() {
+  const text = $('assistant-input').value.trim();
+  if (!text || !assistant.threadId) return;
+  assistantMsg('user', text);
+  $('assistant-input').value = '';
+  assistantSetInputEnabled(false);
+  assistantTyping(true);
+  await fetch(`/api/sessions/${assistant.threadId}/messages`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({text})});
+  assistantPoll();
+}
+async function initAssistant() {
+  if (assistant.ready) { $('assistant-input').focus(); return; }
+  assistant.ready = true;
+  const response = await fetch('/api/sessions', {method: 'POST'});
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    $('assistant-chat').innerHTML = `<div class="assistant-key-missing">${esc(body.detail || 'The assistant could not start.')} The rest of Process Lab works without it.</div>`;
+    $('assistant-composer').hidden = true;
+    return;
+  }
+  const data = await response.json();
+  assistant.threadId = data.thread_id;
+  assistantMsg('system', 'Ask me to simulate a dataset, e.g. "simulate BPIC_2017_W with 5 runs". I will propose a plan and wait for your confirmation before running anything.');
+  $('assistant-input').focus();
+}
+$('assistant-composer').onsubmit = event => { event.preventDefault(); safe(assistantSend)(); };

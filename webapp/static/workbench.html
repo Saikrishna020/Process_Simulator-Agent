@@ -17,7 +17,11 @@
     <button class="nav-item" data-view="results"><span>▥</span> Results</button>
     <button class="nav-item" data-view="history"><span>◷</span> Experiment history</button>
   </nav>
-  <div class="sidebar-bottom"><span class="status-dot"></span> Local workspace<p>Learn from history.<br>Explore the alternatives.</p><a href="/chat">Open research simulator chat ↗</a></div>
+  <div class="nav-label">ASK</div>
+  <nav aria-label="Assistant navigation">
+    <button class="nav-item" data-view="assistant"><span>✦</span> Simulation assistant</button>
+  </nav>
+  <div class="sidebar-bottom"><span class="status-dot"></span> Local workspace<p>Learn from history.<br>Explore the alternatives.</p></div>
 </aside>
 <main>
   <header class="topbar"><span>Workspace <span class="slash">/</span> <strong id="breadcrumb">Resource profiles</strong></span><span class="pill">Empirical simulation</span></header>
@@ -60,6 +64,27 @@
       <section id="view-history" class="view" hidden><div class="section-heading"><div><h2>Experiment history</h2><p>Saved locally with model snapshots, settings, seeds and event logs.</p></div><button class="secondary" id="refresh-history">Refresh</button></div><div id="history-list"></div></section>
       <details class="model-notes"><summary>Model assumptions & data quality <span id="model-version"></span></summary><div id="model-notes-content"></div></details>
     </div>
+    <section id="view-assistant" class="view" hidden>
+      <div class="assistant-layout">
+        <section class="card assistant-panel">
+          <div id="assistant-chat" class="assistant-chat" aria-live="polite"></div>
+          <form id="assistant-composer" class="assistant-composer">
+            <input id="assistant-input" type="text" maxlength="2000" placeholder="e.g. simulate BPIC_2017_W with 5 runs" autocomplete="off">
+            <button type="submit" class="primary" id="assistant-send">Send</button>
+          </form>
+        </section>
+        <aside class="card padded assistant-about">
+          <p class="eyebrow">RESEARCH SIMULATION ASSISTANT</p>
+          <h2>Plans a run, waits for you, then explains it</h2>
+          <p class="subtle">This drives the research engine behind Process Lab (the paper's multi-agent simulator), not the workbench above. Describe what to simulate in plain English; it proposes a precise plan, you confirm it, then it runs and reports how realistic the result is against held-out data.</p>
+          <ul class="assistant-notes">
+            <li>Every plan is re-checked in code before anything runs — dataset, columns and file paths, not just trusted from the model.</li>
+            <li>Nothing runs without you clicking Confirm.</li>
+            <li>A run can take minutes to hours depending on the dataset and repetitions; you can leave this tab and come back.</li>
+          </ul>
+        </aside>
+      </div>
+    </section>
     <footer>Process Lab <span>·</span> Resource experiments grounded in event history <span>·</span> All schedules shown in UTC</footer>
   </div>
 </main>
