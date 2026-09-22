@@ -2,8 +2,45 @@
 
 Process Lab learns resource profiles from an event log and compares a historical
 baseline with a changed resource setup. It runs locally, without an LLM API key.
-The research simulator's chat agent lives in the same app now, as the **Simulation assistant**
+The data and research simulation chat agent lives in the same app, as the **Simulation assistant**
 tab in the sidebar (`/chat` still redirects there for old links).
+
+The assistant receives aggregate statistics from the selected model, plus at most ten
+resource profiles (named resources in the question, otherwise the busiest). It can answer
+historical-data questions without running a simulation. Raw case records and duration
+samples are not included in this context. Model context is sent to the configured DeepSeek
+provider when you send a message. Staffing, schedule and delay changes still use Scenario
+builder; chat's run tool executes the separate research engine after confirmation.
+
+### Explorer and chat troubleshooting
+
+- Restart the Python server after changing backend code. A server running an older model
+  version can reject a newer saved snapshot even though the browser loads the latest HTML.
+- Start with `./start-workbench.ps1` in a normal terminal. If chat reports a connection
+  failure, check the server process's proxy/network configuration. A dead loopback proxy
+  inherited by a background process must be fixed in its launch environment, not in the API key.
+- Model and job writes retry transient Windows file locks. The explorer refreshes after
+  asynchronous model loading, and tab links survive reloads.
+- Chat preserves the conversation in this browser, resumes polling after reload, and
+  exposes a retry button on HTTP failures. After a server restart, retry opens a new
+  session; previous displayed messages are not restored as the new session's LLM memory.
+- Provider calls have a 30-second timeout and one retry. Research simulations have their
+  own longer execution limit. While a plan awaits confirmation, confirm or cancel it
+  before sending another message.
+
+Browser verification without external LLM requests uses an isolated fixture workspace:
+
+```powershell
+# Terminal 1: scripted local planner, real HTTP/session/graph/scenario code
+./.venv/Scripts/python.exe scripts/ui_fixture_server.py
+# Terminal 2: requires installed Microsoft Edge
+./.venv/Scripts/python.exe scripts/verify_workbench_ui.py --local-assistant
+```
+
+The test exercises whole-log explorer counts, chat navigation and reload, model-aware
+replies, confirmation/cancellation, failed-request recovery, and scenario CSV export.
+It does not evaluate the real provider's response quality. `--assistant` instead targets
+the real app/provider and sends test prompts with selected-model summary data externally.
 
 ## Start
 
@@ -288,8 +325,9 @@ Reading through the app rather than just the code surfaced three real bugs:
    removed).
 3. **The assistant never answered.** A message just sat at "processing" and then failed with
    "Connection error." The DeepSeek key itself was fine (confirmed by calling it directly from a
-   clean shell); the already-running server process had inherited a stale local proxy setting
-   (probably from a VPN/corporate tool active when it was first started) that has since gone away.
+   clean shell); the already-running server process had inherited an unusable loopback proxy
+   from its launch environment. During the later reliability check this was identified as
+   the restricted execution environment's proxy at `127.0.0.1:9`.
    Restarting the server picked up a clean environment and fixed it — not a code bug, but worth
    documenting because "the assistant is silently down" has no other visible symptom. If this
    happens again: check `runs/workbench-server.err.log` for `ProxyError`/connection failures around

@@ -81,7 +81,7 @@ in the product — real data tells a better story) and reproduces the paper clos
   worker with crash recovery; nothing is overwritten.
 - The chat agent never executes anything the LLM proposes directly: schema validation, path
   containment, human confirmation, no shell, bounded retries/timeouts.
-- 32 tests (`python -m pytest`), run by GitHub Actions on every push, including a full LoanApp run of the research engine.
+- Regression tests (`python -m pytest`), run by GitHub Actions on every push, including a full LoanApp run of the research engine. Local browser checks also cover explorer and chat recovery; see [WORKBENCH.md](WORKBENCH.md).
 - Data: `raw_data/` is not tracked (BPI logs are large). Convert the public BPI 2017 XES with
   `raw_data/xes_to_csv.py --w-only`. BPI 2019 is listed but disabled in the Lab because its
   export has only zero-duration events.
