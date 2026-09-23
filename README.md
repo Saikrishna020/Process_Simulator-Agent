@@ -22,8 +22,14 @@ see which changes actually matter.**
 4. **How work is allocated does matter.** Sending each task to the earliest available qualified
    person, instead of the historically preferred one, cuts queue wait by 96% (61 h → 2 h) and
    cycle time by ~18%. This is an upper bound: the log cannot show real skill or approval limits.
+5. **A third of cases are customer cancellations, and those are the slow ones.** 33% of cases end
+   in cancellation with a median cycle time of 31.6 days — more than double approved (14.8) or
+   denied (14.1) cases. The median wait for a customer to respond to a loan offer is 185 hours
+   (~7.7 days), which likely accounts for much of the "residual delay" the simulator can't explain.
 
-Full analysis, numbers and reproduction steps: **[PROJECT_GUIDE.md](PROJECT_GUIDE.md)**.
+Full analysis, numbers and reproduction steps: **[PROJECT_GUIDE.md](PROJECT_GUIDE.md)**. Ask these
+questions yourself in **Data Explorer → Data Analyst** — the same findings, computed live from the
+full log, no AI key required for the preset questions.
 
 ## Honest limitations
 
@@ -44,7 +50,10 @@ cd AgentSimulator
 ./start-workbench.ps1          # Process Lab at http://127.0.0.1:8000, no API key needed
 ```
 
-Pick **BPIC_2017_W** → **Learn resource profiles** → look around the **Data explorer** → open **Scenario builder** and start from a
+Pick **BPIC_2017_W** → **Learn resource profiles** → look around the **Data explorer**, which opens
+into a data analyst: ask a plain-English question or click a preset (outcome distribution, rework
+vs. cycle time, offers vs. outcome, resource-outcome mix...) and get a computed answer with its
+query, sample size and caveats, not a canned chart → open **Scenario builder** and start from a
 preset (pooled allocation, halve delays, remove the busiest person, demand +50%). Each run
 compares a paired baseline and scenario and saves settings, seeds and downloadable event logs.
 Or click **Simulation assistant** in the sidebar and just describe what you want in plain English

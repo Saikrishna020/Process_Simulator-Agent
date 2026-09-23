@@ -100,6 +100,12 @@ concepts but is designed for quick, inspectable capacity experiments.
   templates. Residual delays are estimated from the first feasible resource/calendar
   window after the preceding case work to the observed task start. These estimates
   are not labels for the actual causes of delay.
+  Full-log outcome extraction now supplies direct evidence of long offer-response
+  intervals: the matched BPI 2017 population has a median **185.4 hours** across
+  **21,768 cases** with observed sent/returned offers. **9,732 cases** have no
+  matched response and are excluded from this statistic. This supports investigating
+  response delays; it does not identify every residual delay as customer waiting or
+  prove that reducing these intervals would cause a particular outcome.
 - Arrival-day counts and within-day times are sampled by weekday. Demand scales
   the sampled daily case count (rounded to an integer). Each case samples a trace
   template. The baseline and scenario share reproducible draws for matching cases.
@@ -117,6 +123,87 @@ visible. Costs are not inferred from event logs. Cloning a resource does not
 establish what a real new hire would do.
 
 ## Reading results
+
+### Data Explorer as an analyst
+
+Data Explorer now starts with questions rather than a fixed dashboard. The
+suggested (preset) questions run entirely locally, without an API key — each is
+a pre-built `AnalysisPlan` that skips the language planner entirely. Free-text
+questions use DeepSeek only to produce a validated `AnalysisPlan`:
+table, metric, statistic, grouping, filters and chart. The planner receives the
+question, field catalog and optional previous query, not case records or computed
+results. External tracing is disabled for this planner call. The backend never
+executes generated Python, SQL, paths or formulae.
+
+Supported analyses include counts and shares, mean/median/p90 durations, outcome
+comparisons, rework and offer bands, observed customer-response hours, monthly
+trends, activity gaps, and resource workloads. Queries can filter one or several
+categories and numeric/date ranges. A second grouping includes both overall shares
+and shares within the primary group. Bar charts, monthly lines and exact tables
+come from the same computed rows. Missing values stay missing; small groups and
+truncated group lists are explicitly identified.
+
+Every result includes its query, population, sample sizes, missingness, definitions
+and source fingerprints. Analyses are saved under `runs/workbench/analyses/`, can
+be reopened, and can be downloaded as JSON or CSV. Two background analysis slots
+bound concurrent work; parsed data is cached with source-change detection. A
+server restart marks interrupted analyses for retry. Follow-up questions use the
+last displayed query; “Start a fresh question” clears that context.
+
+The analyst can suggest the next investigation and take the user to Scenario
+builder. It **does not train an outcome predictor or claim an optimal intervention**.
+Requests outside the supported schema should return a clarification, not invented
+forecasts. The language planner can misunderstand a question, so the executed query
+is always inspectable in the result; if it's wrong, rephrase the question or start
+from one of the preset questions, which need no language model at all.
+
+An earlier version also exposed the underlying `AnalysisPlan` fields (population,
+measure, statistic, grouping, filters, chart) as a manual "Build an analysis
+without AI" form. It was removed: it duplicated what the nine presets already
+covered, added six dropdowns and a filter builder for no real gain over clicking
+a preset, and its framing implied the presets above it needed an LLM when they
+never did. The API still accepts an explicit `plan` (`POST /api/workbench/analyses`
+with `plan` instead of `question`) — the presets use exactly that path — so nothing
+in the backend changed, only the redundant manual UI. A tenth preset, "Outcome mix
+by resource," was added in its place: it answers the same "do certain resources'
+cases skew toward a particular outcome" question the manual builder could
+construct, with an explicit caveat that this reflects case assignment, not
+resource performance.
+
+#### Reproduce the full-log case facts
+
+```powershell
+./.venv/Scripts/python.exe scripts/extract_outcomes.py `
+  raw_data/bpi2017/BPI_Challenge_2017.xes raw_data/BPIC_2017_W.outcomes.csv
+```
+
+The streaming extractor also accepts `.xes.gz` and writes a companion `.json`
+with source/output hashes and metric definitions. It emits 31,509 full-log cases;
+the analyst joins by case ID to the 31,500 cases in the selected work-item CSV.
+All 31,500 currently match. Extraction is separate from model learning and does
+not alter the simulator's event log or trained snapshots.
+
+- **Outcome:** last observed `A_Pending`, `A_Denied` or `A_Cancelled`, otherwise
+  Unresolved. Pending does not establish that a loan was disbursed.
+- **Cycle days:** first-to-last recorded event in the full case. These durations
+  differ from the older work-item-only overview; neither proves business completion.
+- **Rework count:** entries into `A_Incomplete`, not work-item resumes.
+- **Offers:** distinct offer IDs at creation, with creation-event fallback for absent IDs.
+- **Response hours:** sent-to-returned intervals matched by offer ID and unioned
+  within a case so overlapping offers count once. Unreturned/missing intervals do
+  not become zero. This is an elapsed-response proxy, not a measured causal label.
+
+The rework view includes an explicit counterexample to “more rework always means
+slower”: in this extraction the no-rework group's median full-case duration is
+30.4 days, versus 14.9 days for one incomplete-state entry. Compare rework **within
+outcomes** before interpreting this: long-lived cancelled cases can have no rework,
+and case difficulty can affect both rework and timing. Both aggregate and conditional
+questions are available as local presets.
+
+Tests in `tests/test_analyst.py` cover extraction, overlapping response intervals,
+missing-response denominators, filtering, conditional shares, source invalidation,
+planner boundaries, persistence and unsupported predictions. The local browser
+fixture checks charts, follow-up filtering, saved-result reload and mobile layout.
 
 | Metric | Definition |
 | --- | --- |

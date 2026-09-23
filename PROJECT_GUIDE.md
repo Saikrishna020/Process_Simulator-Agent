@@ -390,6 +390,17 @@ Baseline for these: mean cycle 327 h, mean queue wait 61.5 h, mean residual dela
     assistant never replied to any message ("Connection error" after a long hang) — not a code bug:
     the already-running server process had inherited a stale local proxy setting from an earlier
     VPN/corporate-tool session; restarting the server with a clean environment fixed it.
+11. **Data Explorer now includes a Data Analyst**: nine (now ten) preset questions and free-text
+    questions over the full BPI 2017 log (not just the `W_` work-item subset), covering outcomes
+    (`A_Pending`/`A_Denied`/`A_Cancelled`), rework (`A_Incomplete`), offer negotiation, and observed
+    customer-response time — the same offer/outcome/rework/customer-wait findings in §4 and §6 are
+    reproducible live in the app, not just in this guide. Presets run with no LLM; free-text
+    questions use DeepSeek only to produce a validated, typed query plan that deterministic code
+    then executes — no generated code, SQL or numbers are trusted. A redundant, confusingly-labelled
+    manual query-builder ("Build an analysis without AI") was removed: every preset already ran
+    without AI, so the toggle implied the opposite of what was actually true and duplicated the
+    presets with six dropdowns for no real benefit. A tenth preset, "Outcome mix by resource," was
+    added in its place. See `WORKBENCH.md` ("Data Explorer as an analyst").
 
 **Still open**
 - **Keys:** `.env` holds ~13 credentials for several providers. It is git-ignored, but rotate any that were ever pasted into a chat, log or screenshot, and delete the ones this project does not use (it needs only DeepSeek and optionally LangSmith).
