@@ -5,6 +5,7 @@
   <title>Process Lab · Resource simulations</title>
   <link rel="stylesheet" href="/static/workbench.css">
   <script src="/static/workbench.js" defer></script>
+  <script src="/static/analyst.js" defer></script>
 </head>
 <body>
 <aside class="sidebar">
@@ -37,7 +38,20 @@
         <div class="section-heading"><div><h2>Resource profiles <span id="resource-count" class="count"></span></h2><p>Historical capabilities, processing times and working patterns.</p></div><input type="search" id="resource-search" placeholder="Find a resource or activity…" aria-label="Search resources"></div>
         <div class="resource-layout"><section class="card resource-list"><div class="table-wrap"><table><thead><tr><th>Resource</th><th>Activities</th><th>Observed events</th><th>Scenario</th></tr></thead><tbody id="resource-rows"></tbody></table></div><p id="resource-empty" class="subtle" hidden>No resources match your search.</p></section><aside class="card profile-detail" id="profile-detail" aria-label="Selected resource"></aside></div>
       </section>
-      <section id="view-explore" class="view" hidden><div id="explore-content"></div></section>
+      <section id="view-explore" class="view" hidden>
+        <section class="card padded" aria-label="Data analyst">
+          <p class="eyebrow">YOUR DATA ANALYST</p><h2>Ask a question. Inspect the evidence.</h2>
+          <p class="subtle">Explore outcomes, response times, rework, offers and resource patterns. Calculations run on the local data; every answer includes its query and population.</p>
+          <div id="analyst-summary" aria-live="polite">Loading the data catalog...</div>
+          <form id="analyst-question-form"><label for="analyst-question">What would you like to understand?</label><textarea id="analyst-question" maxlength="2000" rows="2" placeholder="Compare median case duration for denied and pending applications" required></textarea><div class="actions"><button id="analyst-ask" class="primary" type="submit">Analyse question</button><button id="analyst-fresh" class="text-button" type="button">Start a fresh question</button></div></form>
+          <p id="analyst-context" class="field-help">Free-text questions use the configured language planner. Only your question, field catalog and previous query are sent; case records and calculated results stay local.</p>
+          <div id="analyst-suggestions" class="analyst-suggestions"></div>
+        </section>
+        <div id="analyst-status" class="result-note" role="status" hidden></div>
+        <section id="analyst-result" class="card padded" hidden></section>
+        <section class="card padded analyst-history"><h3>Saved analyses</h3><div id="analyst-history"></div></section>
+        <details class="analyst-overview" open><summary>Historical overview: paths, activity gaps and working patterns</summary><div id="explore-content"></div></details>
+      </section>
       <section id="view-scenario" class="view" hidden>
         <section class="card padded presets"><p class="eyebrow">START FROM A PRESET</p><div class="preset-row" id="presets">
           <button type="button" class="secondary" data-preset="pooled">Pooled allocation</button>

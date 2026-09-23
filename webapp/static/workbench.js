@@ -321,6 +321,7 @@ safe(async () => {
 })();
 
 function renderExplorer() {
+  if (typeof loadAnalyst === 'function') safe(loadAnalyst)();
   const box = $('explore-content'), e = state.model?.explore;
   if (!e) { box.innerHTML = '<div class="card empty-state"><h2>Learn a dataset to explore it.</h2><p>This page describes the whole historical log: waiting, common paths, working rhythm and handovers. Learn the dataset again if this model predates the explorer.</p></div>'; return; }
   const short = name => name.replace(/^W_/, '');
