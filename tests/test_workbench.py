@@ -239,6 +239,46 @@ def test_explorer_summarises_the_whole_log():
     assert approve['median_gap_hours']==pytest.approx(239,abs=1)  # ten days minus the one-hour first task
 
 
+def full_event_frame():
+    """A richer event set for the same 300 cases as slow_case_frame(): each case also gets an
+    instantaneous 'A_Submitted' event five minutes before its 'Review' work item, and case 0
+    additionally gets a same-instant 'A_Denied' well after its last work item — mimicking how
+    BPI 2017's application/offer events extend past the last recorded work item."""
+    frame = slow_case_frame()
+    origin = pd.Timestamp('2026-01-01T09:00:00Z')
+    extra = []
+    for case in range(300):
+        submitted = origin + pd.Timedelta(days=case) - pd.Timedelta(minutes=5)
+        extra.append(dict(case_id=f'case-{case}', activity='A_Submitted', resource='Alice', start=submitted, end=submitted))
+    denied = origin + pd.Timedelta(days=309)  # ten days after case 0's last work item
+    extra.append(dict(case_id='case-0', activity='A_Denied', resource='Alice', start=denied, end=denied))
+    return pd.concat([frame, pd.DataFrame(extra)], ignore_index=True)
+
+
+def test_full_events_only_change_the_explorer_not_the_simulation_model():
+    frame = slow_case_frame()
+    baseline = discover(frame, 'test', 'a' * 24, 'hash')
+    fuller = discover(frame, 'test', 'a' * 24, 'hash', full_events=full_event_frame())
+    # Resource capacity (what the simulator actually uses) must be identical either way.
+    assert fuller['resources'] == baseline['resources']
+    assert fuller['templates'] == baseline['templates']
+    assert fuller['arrival_days'] == baseline['arrival_days']
+    # The explorer, however, now sees the extra activity and the later true end for case 0.
+    assert baseline['explore']['full_log'] is False
+    assert fuller['explore']['full_log'] is True
+    assert fuller['explore']['activity_count'] == 4  # Review, Approve, A_Submitted (all cases), A_Denied (case-0 only)
+    assert fuller['explore']['events'] > baseline['explore']['events']
+    assert fuller['explore']['cycle_days']['p90'] > baseline['explore']['cycle_days']['p90']
+
+
+def test_full_events_reject_negative_durations():
+    frame = slow_case_frame()
+    bad = full_event_frame()
+    bad.loc[bad.index[-1], 'end'] = bad.loc[bad.index[-1], 'start'] - pd.Timedelta(hours=1)
+    with pytest.raises(ValueError, match='negative durations'):
+        discover(frame, 'test', 'a' * 24, 'hash', full_events=bad)
+
+
 def test_validation_compares_the_baseline_with_the_reference_and_skips_old_models(model):
     learned=discover(slow_case_frame(),'test','a'*24,'hash')
     run,_=simulate(learned,request(),42,baseline=True)

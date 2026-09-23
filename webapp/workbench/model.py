@@ -19,7 +19,7 @@ import pandas as pd
 
 from .calendar import DAY, next_work, working_between
 
-MODEL_VERSION = 3
+MODEL_VERSION = 4
 
 
 def atomic_json(path: Path, value):
@@ -140,7 +140,23 @@ def explore(df, bounds):
         handover=dict(names=busiest, matrix=matrix, same_resource_pct=float(100 * (moves.resource == moves.previous_resource).mean()) if len(moves) else 0.0))
 
 
-def discover(frame: pd.DataFrame, dataset: str, model_id: str, source_hash: str) -> dict:
+def _clean_events(frame: pd.DataFrame, required: list) -> pd.DataFrame:
+    df = frame[required].copy()
+    for col in ["case_id", "activity", "resource"]:
+        df[col] = df[col].astype(str)
+    for col in ["start", "end"]:
+        df[col] = pd.to_datetime(df[col], utc=True, format="mixed", errors="coerce")
+    return df
+
+
+def discover(frame: pd.DataFrame, dataset: str, model_id: str, source_hash: str,
+             full_events: pd.DataFrame | None = None) -> dict:
+    """`full_events`, when given, is a separately-extracted full event log (e.g. BPI 2017's
+    application and offer events alongside its work items — see webapp/workbench/full_log.py)
+    used only to describe the whole process in Data Explorer. It never reaches resource
+    profiles, calendars, templates or arrival days: those stay derived from `frame` alone, so
+    the simulator's resource-capacity model is unaffected by whether a full log is available.
+    """
     required = ["case_id", "activity", "resource", "start", "end"]
     if any(c not in frame for c in required):
         raise ValueError("The log requires case ID, activity, resource, start and end columns.")
@@ -238,16 +254,25 @@ def discover(frame: pd.DataFrame, dataset: str, model_id: str, source_hash: str)
         offsets = sorted((observed.astype("int64") / 1e9 - day.timestamp()).tolist()) if observed is not None else []
         arrival_days[day.weekday()].append(offsets)
     history = reference(df, bounds, train_ids, test_ids)
+    if full_events is not None:
+        full = _clean_events(full_events, required).dropna(subset=["start", "end"])
+        if (full.end < full.start).any():
+            raise ValueError("The full event log contains negative durations.")
+        full_bounds = full.groupby("case_id").agg(start=("start", "min"), end=("end", "max")).sort_values("start")
+        overview = explore(full, full_bounds)
+    else:
+        overview = explore(df, bounds)
+    overview["full_log"] = full_events is not None
     activity_counts = train.activity.value_counts()
     model = dict(version=MODEL_VERSION, model_id=model_id, dataset=dataset, source_hash=source_hash,
-        created_at=datetime.now(timezone.utc).isoformat(), engine="empirical-trace-v3",
+        created_at=datetime.now(timezone.utc).isoformat(), engine="empirical-trace-v4",
         start_timestamp=float(bounds.loc[test_ids].start.min().normalize().timestamp()),
         source_events=len(df), source_cases=len(bounds), training_events=len(train), training_cases=len(train_ids),
         test_cases=len(test_ids), excluded_boundary_cases=len(bounds) - len(train_ids) - len(test_ids),
         training_start=pd.Timestamp(train_start, unit="s", tz="UTC").isoformat(),
         training_end=pd.Timestamp(train_end, unit="s", tz="UTC").isoformat(),
         overlap_event_pct=round(elapsed_overlap / len(train) * 100, 2), zero_duration_pct=round(zero_fraction * 100, 2),
-        historical_cycle_hours=history["cycle_hours"], reference=history, explore=explore(df, bounds),
+        historical_cycle_hours=history["cycle_hours"], reference=history, explore=overview,
         resources=profiles, activities=[dict(name=a, event_count=int(n)) for a, n in activity_counts.items()],
         templates=templates, arrival_days=arrival_days,
         assumptions=["Activity sequences and preferred resource handoffs are resampled from complete training cases.",

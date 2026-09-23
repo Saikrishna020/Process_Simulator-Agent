@@ -128,8 +128,17 @@ class Workbench:
                     frame = pd.read_csv(path, usecols=list(mapping), dtype={dataset.case_id: str, dataset.resource: str}, nrows=1_000_001).rename(columns=mapping)
                     if len(frame) > 1_000_000:
                         raise ValueError("Use a dataset with at most one million events for this workbench.")
+                    full_log_path = self.raw_data / f"{dataset.name}.full_log.csv"
+                    full_events = None
+                    if full_log_path.exists():
+                        progress("Reading the full application/offer/work-item log for Data Explorer", 20)
+                        # Descriptive only (see full_log.py) — a separate, more generous cap than the
+                        # simulation-critical W_ CSV above, since it never feeds resource capacity.
+                        full_events = pd.read_csv(full_log_path, dtype={"case_id": str, "resource": str}, nrows=5_000_001)
+                        if len(full_events) > 5_000_000:
+                            raise ValueError("The full event log exceeds five million events.")
                     progress("Learning resource schedules, durations, handoffs and case patterns", 35)
-                    model = discover(frame, payload, model_id, digest)
+                    model = discover(frame, payload, model_id, digest, full_events=full_events)
                     atomic_json(model_path, model)
                 model = self.get_model(model_id)
                 job["model_id"] = model_id
