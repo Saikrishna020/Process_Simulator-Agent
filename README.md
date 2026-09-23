@@ -13,8 +13,11 @@ see which changes actually matter.**
 
 ## What I found (BPI Challenge 2017, 31,500 loan applications, 149 people)
 
-1. **A typical case takes 9.7 days but needs only ~25 minutes of hands-on work** — 0.9% of
-   elapsed time. The rest is waiting.
+1. **A typical case takes 19.1 days but needs only ~25 minutes of hands-on work** — 0.5% of
+   elapsed time. The rest is waiting. (Using only the human work-item subset undercounts this:
+   it shows 9.7 days because it misses the time between the last work item and the case's actual
+   close — e.g. waiting on an automated or customer-driven step. Data Explorer now uses the full
+   log — applications, offers and work items — not just work items.)
 2. **Most waiting is not a staffing problem.** About 78% of simulated cycle time is external
    delay (customer callbacks, documents); ~21% is queueing; processing is ~1%.
 3. **Adding or removing people barely moves cycle time.** Removing the busiest person: −0.2%.

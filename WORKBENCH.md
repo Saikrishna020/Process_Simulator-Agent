@@ -205,6 +205,45 @@ missing-response denominators, filtering, conditional shares, source invalidatio
 planner boundaries, persistence and unsupported predictions. The local browser
 fixture checks charts, follow-up filtering, saved-result reload and mobile layout.
 
+#### The overview charts also use the full log now
+
+The Data Analyst above and the historical-overview charts (idle time, common paths,
+hour-of-week heatmap, case duration by month, handover matrix) used to read different
+data: the analyst joined the full log's case-level facts, but the overview charts were
+still built from the `W_` work-item CSV alone, understating the true process — a case's
+last recorded *work item* is often not when the case actually closed.
+
+```powershell
+./.venv/Scripts/python.exe scripts/extract_full_log.py `
+  raw_data/bpi2017/BPI_Challenge_2017.xes raw_data/BPIC_2017_W.full_log.csv
+```
+
+This streams the whole log — application (`A_*`), offer (`O_*`) and work-item (`W_*`)
+events — into a flat `case_id, activity, resource, start, end` CSV plus a provenance
+`.json`, the same pattern as `extract_outcomes.py`. Work items keep real durations from
+their start/complete lifecycle; every other activity is a single `complete` event with
+no matching start and is recorded as instantaneous (`start == end`), never fabricated.
+
+When this file exists, learning BPI 2017 again (model version 4) picks it up
+automatically and uses it **only** for the overview charts — `webapp/workbench/model.py`'s
+`discover()` takes it as an optional `full_events` argument that never touches resource
+profiles, calendars, templates or arrival days; those keep coming from the `W_`-only
+frame, so the simulator's resource-capacity model is byte-for-byte unaffected by whether
+a full log is available. `explore()`'s `full_log` flag tells the UI which data it's
+looking at, and its wording ("tasks" vs "events") follows accordingly.
+
+This is what corrected the headline cycle-time number: with the full log, median case
+duration is **19.1 days** (mean 21.9, p90 35.1), not the work-item-only 9.7 days — the
+"idle time before each event" chart now also shows the gap after the last work item and
+before the case's actual close (an automated step, or simply an unresponsive customer),
+which the work-item-only view couldn't see at all. Activity count rises from 8 to 26,
+touch-time share falls from 0.9% to 0.5%, and case count rises slightly (31,500 → 31,509)
+because a handful of applications have no work item at all yet still appear in the full
+log. Tests: `tests/test_full_log.py` (pairing logic, instantaneous non-`W_` events, a
+stray work-item `complete` with no matching `start` is skipped, not fabricated) and
+`tests/test_workbench.py::test_full_events_only_change_the_explorer_not_the_simulation_model`
+(resource profiles/templates/arrival days are identical with or without a full log).
+
 | Metric | Definition |
 | --- | --- |
 | Mean / median / p90 case duration | Elapsed hours from arrival to final task completion, including cases finishing after the horizon |

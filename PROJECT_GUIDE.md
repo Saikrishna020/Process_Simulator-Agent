@@ -24,7 +24,7 @@
 
 **The five things the data actually says** (§3, §4):
 
-1. In BPI 2017, a typical case takes **9.7 days** door to door but only **~25 minutes of hands-on work**. Hands-on work is **0.9 %** of elapsed time. The rest is waiting.
+1. In BPI 2017, a typical case takes **19.1 days** door to door (using only the human work-item subset understates this at 9.7 days) but only **~25 minutes of hands-on work**. Hands-on work is **0.5 %** of elapsed time. The rest is waiting.
 2. Most of that waiting is **not** caused by lack of staff: system utilisation in the model is ~6 %. It is caused by *external* delays (customer callbacks, documents arriving).
 3. Consequently, **adding or removing people barely moves cycle time** (removing the single busiest person: −0.2 %; adding three copies of them: −0.2 %), while **halving the external delays** moves it by ~37 %.
 4. The one lever inside the organisation that *does* matter is **how work is allocated**: sending each task to the *earliest available qualified person* instead of the historically preferred person cuts queue wait by 96 % (61 h → 2 h) and cycle time by ~18 %.
@@ -155,7 +155,9 @@ All computed directly from `raw_data/BPIC_2017_W.csv`.
 | Typical single work item | 0.5–5 min (median 1.65 min) |
 | Median gap between two consecutive work items in a case | **4.3 h**, but for `Validate application` it is **21.9 h** (mean 64 h) and for `Call after offers` **17.3 h** (mean 51 h) |
 
-So a case is a ~25-minute job that takes ~10 days. **The improvement opportunity is in the gaps, not in the tasks.** Monthly median cycle time is remarkably flat (8.2–10.9 days), so the process is stable over the year — a good sign for training on the past to predict the future.
+So a case is a ~25-minute job that takes ~10 days by the work-item subset alone. **The improvement opportunity is in the gaps, not in the tasks.** Monthly median cycle time is remarkably flat (8.2–10.9 days), so the process is stable over the year — a good sign for training on the past to predict the future.
+
+**This table understates the true cycle time.** It's built from `W_` work items only — the last recorded event of a case is often the last thing a *human* did, not when the case actually closed. Data Explorer now also loads the full log (`A_`/`O_`/`W_` events, via `scripts/extract_full_log.py`) and the true median jumps to **19.1 days** (mean 21.9, p90 35.1) — nearly double. Touch-time share drops from 0.9% to 0.5%: waiting is even more dominant than this table shows. The gap is time between the last work item and the case's formal close (an automated step, or the customer simply not responding) — itself a finding, not an artefact. §6 and `WORKBENCH.md` have the detail; the simulator's own model (§5, §6) is unaffected, since it correctly uses only `W_` events for resource capacity regardless.
 
 ### 3.3 People: many generalists, moderate concentration, calendar of a real office
 - **149 resources.** Top 10 do 24 % of events, top 20 do 39 %, the bottom half of the workforce does only 13 %.
@@ -401,6 +403,18 @@ Baseline for these: mean cycle 327 h, mean queue wait 61.5 h, mean residual dela
     without AI, so the toggle implied the opposite of what was actually true and duplicated the
     presets with six dropdowns for no real benefit. A tenth preset, "Outcome mix by resource," was
     added in its place. See `WORKBENCH.md` ("Data Explorer as an analyst").
+12. **Data Explorer's own overview charts (idle time, common paths, hour-of-week heatmap, case
+    duration by month, handover matrix) were still `W_`-only** even after #11 gave the Data
+    Analyst the full log — the two features loaded different data. Fixed: `discover()` now
+    accepts an optional `full_events` frame (`webapp/workbench/full_log.py` streams the full XES
+    the same way `outcomes.py` does, pairing `W_` start/complete lifecycles and treating `A_`/`O_`
+    events as instantaneous) and uses it for these charts alone when available
+    (`raw_data/BPIC_2017_W.full_log.csv`, `scripts/extract_full_log.py`) — model version 4.
+    Resource profiles, calendars, templates and arrival days are computed from the `W_`-only frame
+    exactly as before; only the descriptive charts changed. This is what surfaced the corrected
+    19.1-day median cycle time in §3.2. Also fixed: `.actions` (the button row under the question
+    box and under a result) had no `display:flex`/`gap` rule at all — buttons sat touching, with
+    only a single collapsed inline-text space between them.
 
 **Still open**
 - **Keys:** `.env` holds ~13 credentials for several providers. It is git-ignored, but rotate any that were ever pasted into a chat, log or screenshot, and delete the ones this project does not use (it needs only DeepSeek and optionally LangSmith).
