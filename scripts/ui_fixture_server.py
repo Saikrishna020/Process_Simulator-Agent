@@ -21,6 +21,7 @@ from webapp import main
 from webapp.orchestrator import graph, jobs
 from webapp.orchestrator.dataset_registry import get_dataset
 from webapp.workbench import api, service
+from webapp.workbench import analyst as analyst_module
 from webapp.workbench.model import MODEL_VERSION, atomic_json
 
 fixture_root = ROOT / "runs" / "browser-fixture" / uuid.uuid4().hex
@@ -58,6 +59,16 @@ class LocalPlanner:
 
 graph.build_llm = LocalPlanner
 jobs._graph = graph.build_graph(MemorySaver())
+
+
+def local_analysis_plan(question, catalog, previous=None):
+    if question == "Show denied cases only":
+        plan = (previous or analyst_module.AnalysisPlan()).model_copy(update={"filters": [analyst_module.Filter(field="outcome", value="Denied")]})
+        return analyst_module.Intent(plan=plan)
+    return analyst_module.Intent(clarification="This request needs a validated prediction model; choose a descriptive analysis.")
+
+
+analyst_module.plan_question = local_analysis_plan
 
 
 @main.app.get("/api/test-provider")

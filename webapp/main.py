@@ -31,6 +31,7 @@ from .orchestrator.llm import configure_langsmith
 from .orchestrator.logging_utils import setup_logging
 from .workbench.api import router as workbench_router
 from .workbench.service import workbench
+from .workbench.analyst import analyst
 
 log = logging.getLogger(__name__)
 
@@ -42,6 +43,7 @@ async def lifespan(app: FastAPI):
     # The scenario workbench is local and needs no LLM credentials.
     logging.basicConfig(level=logging.INFO)
     workbench.recover()
+    analyst.recover(workbench)
     log.info("Orchestrator ready (cwd=%s)", Path.cwd())
     yield
     jobs.shutdown()

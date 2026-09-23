@@ -5,8 +5,24 @@ from pydantic import BaseModel
 from .model import public_model
 from .schemas import ExperimentRequest
 from .service import BusyError, workbench
+from .analyst import AnalysisRequest, analyst
 
 router = APIRouter(prefix="/api/workbench")
+
+
+@router.get("/models/{model_id}/analyst")
+def analyst_catalog(model_id: str):
+    return invoke(analyst.catalog, workbench, model_id)
+
+
+@router.post("/analyses", status_code=202)
+def analyse(body: AnalysisRequest):
+    return invoke(analyst.submit, workbench, body)
+
+
+@router.get("/analyses/{analysis_id}")
+def analysis(analysis_id: str):
+    return invoke(analyst.get, workbench, analysis_id)
 
 
 def invoke(function, *args):
