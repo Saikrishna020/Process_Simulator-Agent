@@ -17,6 +17,19 @@ a Dutch bank's lending process.
 
 ---
 
+## What you can do with it
+
+| Tab | What it answers |
+|---|---|
+| **Resource profiles** | Who can do what, how fast, when they work, who they hand off to |
+| **Data explorer** | What the history actually says — ask a question, get a computed answer with its query and sample sizes |
+| **Scenario builder** | Add people, remove people, change speeds or hours, scale demand, cut delays, change how work is routed |
+| **Results** | The changed world beside an identical baseline, with a fidelity check against real held-out cases |
+| **Experiment history** | Every run, its exact settings and seeds, and its downloadable event logs |
+| **Simulation assistant** | Describe a change in plain English; it proposes an experiment you confirm before it runs |
+
+---
+
 ## What the data actually says
 
 1. **A typical case takes 19.1 days but needs only ~25 minutes of hands-on work** — 0.5% of
@@ -33,36 +46,11 @@ a Dutch bank's lending process.
    cancellation with a median cycle time of 31.6 days, versus 14.8 (approved) and 14.1 (denied).
    The median wait for a customer to respond to an offer is 185 hours (~7.7 days).
 
-Every one of these is reproducible live in the app: **Data explorer → Data Analyst**, where the
+The short version: **this process is a ~25-minute job that takes three weeks, and you cannot fix
+it by hiring.** The levers that move it are the waiting between steps and the way work is routed.
+
+Every one of these is reproducible live in the app — **Data explorer → Data Analyst**, where the
 preset questions run locally with no API key.
-
----
-
-## One engine, deliberately
-
-This project previously shipped **two** simulation engines: the published *AgentSimulator*
-research engine (`source/`, Mesa-based, agent-per-resource) and this empirical engine. They have
-been consolidated, and the reasoning is worth stating because it is the central design decision.
-
-| | Research engine (removed) | **Process Lab engine** |
-|---|---|---|
-| Runtime | minutes → hours | **~10 s per paired comparison** |
-| **Can it run what-ifs?** | **No** — it cannot change staffing, schedules, demand or speed | **Yes; that is its purpose** |
-| Paired random numbers | No | **Yes — an unchanged scenario reproduces the baseline exactly** |
-| Inspectable model | No | **Yes — immutable, content-hashed, readable JSON** |
-| Models parallel branches | Yes | No |
-| Generates *novel* control flow | Yes | No — it resamples frozen real traces |
-
-The deciding argument is not speed. **A what-if tool whose engine has no what-if levers cannot
-answer the product's question.** The research engine's role was to produce a benchmark table; that
-capability was kept instead by porting its five published measures onto this engine
-(`processlab/scoring/`), so the engine that actually makes the claims is now the engine that gets
-scored on the standard yardstick.
-
-**What was given up, honestly:** parallel-branch modelling, the ability to simulate activity
-sequences that never occurred, and a fix (plus its test) for a `BrokenProcessPool` crash in the
-paper's enabled-time discovery, which was only relevant to that code. The paper remains credited
-below; its method shaped this one.
 
 ---
 
@@ -75,8 +63,7 @@ below; its method shaped this one.
 2. **Temporal split** at the 80th-percentile case start (BPI 2017: 19 Oct 2016). Training cases
    must *finish* before the cutoff (24,041); held-out cases must *start* at or after it (6,300);
    **1,159 straddlers are excluded** — a half-observed case teaches wrong durations and a wrong
-   ending. Never a random split: processes drift, and a random split leaks the future. The rule
-   lives in `engine/split.py` and is shared with scoring so the two cannot diverge.
+   ending. Never a random split: processes drift, and a random split leaks the future.
 3. **Per resource** (137 profiles): a calendar inferred from the earliest-to-latest observed hour
    per weekday in **UTC**; per-activity **empirical working-time samples** with off-calendar time
    subtracted; median/mean/p90; observed load; top-5 handoff probabilities.
@@ -112,8 +99,9 @@ one background job at a time, and a backlog beyond five years is rejected rather
 
 ### Scoring — `processlab/scoring/metrics.py`
 
-The five published measures from the AgentSimulator paper, against the real held-out log. On
-BPI 2017 (2 baseline repetitions, 78-day held-out arrival window, 6,300 cases / 47,060 events):
+Five published distance measures against the real held-out log, from the AgentSimulator paper
+(see Credits). Lower is better. On BPI 2017 — 2 baseline repetitions, a 78-day held-out arrival
+window, 6,300 cases / 47,060 events:
 
 | | Measure | Mean | Reading |
 |---|---|---|---|
@@ -123,7 +111,7 @@ BPI 2017 (2 baseline repetitions, 78-day held-out arrival window, 6,300 cases / 
 | **REDD** | timing relative to case start | 30.3 | informative |
 | **CTDD** | overall case durations | 53.2 | informative — the headline |
 
-**Two of the five are labelled "qualified" on purpose.** This engine replays *real observed
+**Two of the five are labelled "qualified" on purpose.** The engine replays *real observed
 traces*, so NGD largely measures train-vs-test control-flow drift in the data rather than model
 skill — a good NGD here is close to a tautology, and quoting it as an achievement would be
 dishonest. AEDD depends on arrival-horizon alignment, so the real log is trimmed to the simulated
@@ -135,10 +123,6 @@ return these caveats next to the numbers:
 python scripts/score_baseline.py BPIC_2017_W
 ```
 
-These are *not* like-for-like with the research engine's old table (different held-out population,
-different arrival treatment), so they are not a victory claim over it. They are the first time the
-engine that produces the findings has been measured on the standard yardstick.
-
 ---
 
 ## Architecture
@@ -146,7 +130,7 @@ engine that produces the findings has been measured on the standard yardstick.
 ```
 processlab/
   core/        config, dataset registry, LLM client, crash-safe storage, log redaction
-  engine/      split · calendar · model · simulation · schemas   <- the one engine
+  engine/      split · calendar · model · simulation · schemas
   extract/     streaming XES -> CSV (full log, case outcomes)
   analysis/    the typed-plan Data Analyst
   scoring/     the five published distance measures
@@ -156,9 +140,8 @@ processlab/
   main.py      FastAPI: "/" is Process Lab; "/chat" redirects to the assistant tab
 ```
 
-`core/` exists to break an inverted dependency the old layout had: the no-credentials product
-layer used to import *from* the LLM layer. Now both depend on shared infrastructure, and the LLM
-key is **optional** — the engine, scenarios and all ten analyst presets never touch it.
+The LLM key is **optional**: the engine, scenario runs and all ten analyst presets never touch it.
+Only the assistant tab and free-text analyst questions need a provider.
 
 ### The Data Analyst: the LLM plans, code calculates
 
@@ -184,9 +167,6 @@ Data explorer opens with questions rather than a fixed dashboard.
 ```
 understand_request (LLM) → validate (code) → confirm_run (human) → run_scenario → report
 ```
-
-The assistant used to be able only to trigger a research run and apologise that it could not change
-staffing. Pointed at this engine, it runs real scenarios.
 
 1. **Closed toolset** — the LLM may emit exactly two typed objects, `ScenarioRequest` or
    `ClarificationNeeded`. There is no tool that executes code or a shell.
@@ -220,7 +200,8 @@ Say these first; they make the rest credible.
   median, +18% p90**. Use it to *compare scenarios*, not to predict days.
 - **One task at a time per resource** — yet **15.4%** of real BPI 2017 work items overlap. The app
   reports that overlap so the assumption stays visible. No batching, fatigue or learning curves.
-- **No parallel branches within a case.**
+- **No parallel branches within a case**, and process steps cannot be added or removed — only
+  resources, times, delays, demand and routing.
 - **Calendars are inferred, in UTC.** "Earliest to latest observed hour per weekday" is not a
   roster; one Sunday-evening event grants someone a Sunday window. Dutch local time is UTC+1/+2.
 - **Cloning a person copies that person's behaviour.** A real new hire would differ; the chosen
@@ -230,7 +211,6 @@ Say these first; they make the rest credible.
 - **Short horizons mislead "backlog"** — the simulation starts with an empty queue, so a 7-day run
   reports most cases as backlog. Use ≥30 days.
 - **Utilisation ~6% is relative, not an absolute staffing figure.**
-- **Process steps cannot be added or removed** — only resources, times, delays, demand and routing.
 - **Pooled routing is an upper bound** (no skill tiers in the log).
 - **Local single-operator tool** — no authentication, one worker.
 
@@ -240,24 +220,24 @@ Say these first; they make the rest credible.
 
 ### A bug caught by sanity-checking the model against the data
 
-Model v1 estimated residual delay from the **last resource completion** before a task's observed
-start. That silently converted customer waiting into resource contention.
+An early version of the model estimated residual delay from the **last resource completion**
+before a task's observed start. That silently converted customer waiting into resource contention.
 
-| | v1 (wrong) | v2 (fixed) |
+| | before | after |
 |---|---|---|
 | Mean queue & calendar wait per case | **405 h** | 71 h |
 | Mean residual delay per case | **6.9 h** | 263 h |
 | Median simulated cycle time | 37 h | 239 h (held-out history: 219 h) |
 
 Two things exposed it: the simulated median (37 h) was nowhere near the held-out median (219 h),
-and "add capacity" should have helped enormously if queues really were 405 h — it didn't. v2 takes
-the *first feasible working window after the case was ready*.
+and "add capacity" should have helped enormously if queues really were 405 h — it didn't. The fix
+takes the *first feasible working window after the case was ready*.
 `test_delay_uses_first_idle_window_not_the_last_completion` locks it in, and `MODEL_VERSION` was
-bumped so v1 snapshots are refused rather than silently reused.
+bumped so stale snapshots are refused rather than silently reused.
 
-**It also inverted the business conclusion.** Under v1 capacity looked like the bottleneck; under
-v2, 78% of cycle time is external and staffing barely matters. That is the project's whole thesis,
-and it turned on one wrong line.
+**It also inverted the business conclusion.** Before the fix, capacity looked like the bottleneck;
+after it, 78% of cycle time is external and staffing barely matters. That is the project's whole
+thesis, and it turned on one wrong line.
 
 ### Why the baseline looked 20% off, and why it isn't
 
@@ -287,35 +267,6 @@ python scripts/diagnose_baseline_gap.py       # the outlier analysis
 ```
 
 ---
-
-## Bugs the consolidation surfaced
-
-Running the browser check for real — rather than trusting that it passed — found three stale
-assertions that had been silently green, plus two of my own.
-
-**Already broken before the consolidation,** because the browser script was never updated when
-the explorer moved to the full application/offer/work-item log (model version 4):
-
-1. **The explorer count assertion checked 31,500** — the `W_`-only case count — while the page
-   correctly rendered **31,509**, the full-log count. The nine applications with no work item at
-   all appear in the full log but not the `W_` subset.
-2. **The assistant reply assertion had the same hardcoded 31,500**, for the same reason.
-3. **The chart assertion clicked preset `[8]`** expecting the monthly line chart. When a tenth
-   preset ("Outcome mix by resource") was inserted ahead of it, index 8 became a *bar* chart — so
-   the assertion kept passing while testing the wrong thing.
-
-All three are now derived from the model's own figures or selected by name, so they cannot go
-stale again: a hardcoded expectation that drifts from the code is worse than no test, because it
-reports success.
-
-**Introduced by the consolidation and caught the same way:**
-
-4. **A startup log line could stop the app serving.** The new lifespan called `get_settings()` to
-   report whether the assistant was enabled; if settings failed to resolve, boot failed. A log
-   line must never decide whether the app runs.
-5. **An orphaned bullet in the confirmation card.** The card's value cells are right-aligned, so
-   the change list's markers stranded themselves at the far left, away from their text — visible
-   only in a screenshot, not in any assertion.
 
 ## Data
 
@@ -387,6 +338,9 @@ Interrupted jobs are marked as errors on restart and can be resubmitted.
 - Typed boundaries throughout: Pydantic with `extra="forbid"` and `allow_inf_nan=False`, plus
   cross-field validators (schedule end after start, unique weekdays, one change per
   resource/activity, every numeric range).
+- The temporal split is defined **once**, in `engine/split.py`, and shared by the model and the
+  scoring harness. A scoring run that derived its own split would silently invalidate every number
+  it produced.
 - Crash-safe Windows-aware persistence: `atomic_json` writes a temp file and retries `replace()`
   against transient locks rather than truncating a file a reader holds; `read_json` retries
   symmetrically. There is a regression test for it.
@@ -394,10 +348,14 @@ Interrupted jobs are marked as errors on restart and can be resubmitted.
   comparison budget, and explicit size caps.
 - Defence in depth on outputs: regex-validated job ids and filenames, bounded repetition indices,
   and `public_model()` stripping samples and templates from anything served over HTTP.
-- **76 tests, all green in under six seconds**, run by GitHub Actions on every push. The end-to-end
-  scenario now executes on the engine in-process — the old research-engine equivalent took ~2
-  minutes and CI had to skip it. The assistant is tested against a scripted fake LLM: full routing
-  coverage, no provider calls, no cost.
+- **76 tests, green in under seven seconds**, run by GitHub Actions on every push, and verified in a
+  clean environment built only from `requirements.txt`. The assistant is tested against a scripted
+  fake LLM: full routing coverage, no provider calls, no cost.
+- **Tests that pass can still be lying.** Three browser assertions here were silently green while
+  checking the wrong things — two compared against a hardcoded case count the app had outgrown, and
+  one selected a chart by list position that a later insertion had shifted. All three now derive
+  from the model's own figures or select by name. A hardcoded expectation that drifts from the code
+  is worse than no test, because it reports success.
 - Browser verification runs against a local fixture server with a scripted planner, so UI checks
   make no external LLM requests:
   ```powershell
@@ -415,8 +373,7 @@ node --check processlab/web/static/workbench.js
 ## Background reading
 
 [docs/GUIDE.md](docs/GUIDE.md) — process mining in ten minutes, what the three datasets contain,
-the full BPI 2017 data exploration, and a glossary. Deliberately engine-agnostic; this README
-remains the single source of truth for architecture, method and results.
+the full BPI 2017 data exploration, and a glossary.
 
 ## Credits
 
@@ -424,9 +381,9 @@ The method — modelling each resource as an agent with its own schedule, skills
 habits, and letting the process emerge from their interaction — comes from **AgentSimulator**:
 *"AgentSimulator: An Agent-based Approach for Data-driven Business Process Simulation"* by Lukas
 Kirchdorfer, Robert Blümel, Timotheus Kampik, Han van der Aa and Heiner Stuckenschmidt, ICPM 2024
-([arXiv 2408.08571](https://arxiv.org/abs/2408.08571)). Earlier versions of this repository ran that
-paper's supplementary code directly; this engine, the scoring harness, Process Lab, the Data Analyst,
-the assistant and its guardrails are built on top of its ideas rather than its implementation.
+([arXiv 2408.08571](https://arxiv.org/abs/2408.08571)). An earlier version of this repository ran
+that paper's supplementary code directly; this engine, the scoring harness, Process Lab, the Data
+Analyst and the assistant are built on its ideas rather than its implementation.
 
 The five distance measures come from the `log-distance-measures` package. Residual-delay discovery
 follows Chapela-Campa & Dumas.

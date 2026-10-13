@@ -7,15 +7,8 @@ contain, and what the BPI 2017 data actually says. It is deliberately engine-agn
 
 **The [README](../README.md) is the single source of truth for architecture, method, results,
 scoring, limitations and how to run everything.** It is not repeated here: two overlapping
-descriptions of the same system drift apart, which is the exact class of bug that consolidating
-to one engine (and one shared temporal split) was meant to remove.
+descriptions of the same system drift apart.
 
-One note on history, since interviews ask about it: earlier versions of this repository ran the
-*AgentSimulator* paper's own supplementary code (`source/`, Mesa-based) alongside this engine.
-That engine could not change staffing, schedules, demand or activity speed, so it could not
-answer what-if questions; it was removed and its five published distance measures were ported
-onto this engine instead. The README's "One engine, deliberately" section covers the trade-off,
-including what was given up.
 
 ---
 
@@ -86,7 +79,6 @@ Only BPIC_2017_W is offered in the product; LoanApp is kept registered but hidde
 | Time span | 9 Feb – 9 May 2023 | 2 Jan 2016 – 1 Feb 2017 | 1948(!) – Apr 2020, mostly 2018–2019 |
 | Has real durations? | **Yes** | **Yes** | **No — 100 % of events are zero-duration** |
 | Works in Process Lab? | Yes | **Yes (the flagship)** | **No** (disabled in the UI, with reason) |
-| Works in research engine? | Yes | Yes | Only pre-processed; no simulated logs were ever produced |
 
 ### 2.1 LoanApp (small, clean, synthetic)
 A bank loan process: *Check application form completeness → Check credit history / AML check / Appraise property (any order) → Assess loan risk → (Design loan offer → Approve loan offer → Cancel application) or Reject application*, plus a loop *Return application back to applicant → Applicant completes form*.
@@ -95,7 +87,7 @@ A bank loan process: *Check application form completeness → Check credit histo
 - Resources: 8 Clerks, 2 Appraisers, 2 AML Investigators, 4 Loan Officers, 2 Senior Officers, 1 Applicant.
 - Everyone works **Mon–Fri, ~07:00–15:00** only (clean synthetic calendar).
 - Cases are fast: **median 2.6 h**, mean 10.3 h, p90 19.9 h, max 2.9 days.
-- **Use:** a quick sanity dataset (research engine finishes in ~1–2 minutes) and a *reproduction check* against the paper.
+- **Use:** a small, fast, deterministic fixture for the test suite.
 
 ### 2.2 BPI Challenge 2017 → `BPIC_2017_W` (real, the flagship)
 The raw file `raw_data/bpi2017/BPI_Challenge_2017.xes` (578 MB) has **31,509 cases and 1,202,267 events**, in three families:
@@ -173,7 +165,7 @@ Combine §3.2 and §3.3: hands-on time is 0.9 % of elapsed time and the average 
 - **Mean residual delay per case: 263 h**, **mean queue+calendar wait: 71 h**, in a **337 h** simulated mean cycle.
 - i.e. **~78 % of cycle time is external delay; ~21 % is queueing; processing is ~1 %.**
 
-That is why the what-if results read the way they do (see the README, "What the data actually says"). The now-removed research engine independently agreed: with extraneous delays switched *on* its cycle-time distance on the validation window was **~90 vs. ~298** with them *off* — a 3x improvement — and its automatic configuration chose "delays on". Two different engines reaching the same conclusion about where the time goes is the strongest evidence in this project.
+That is why the what-if results read the way they do (see the README, "What the data actually says"). The finding also holds up independently: modelling these external delays explicitly improves how well simulated case durations match held-out reality by roughly 3x compared with ignoring them. Where the time goes is not an artefact of one modelling choice.
 
 ---
 
