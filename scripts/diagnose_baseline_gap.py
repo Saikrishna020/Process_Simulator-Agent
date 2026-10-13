@@ -18,8 +18,8 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from webapp.workbench.schemas import ExperimentRequest  # noqa: E402
-from webapp.workbench.simulation import simulate, validate  # noqa: E402
+from processlab.engine.schemas import ExperimentRequest  # noqa: E402
+from processlab.engine.simulation import simulate, validate  # noqa: E402
 
 CAPS_HOURS = [24, 8]
 HORIZON, REPETITIONS, SEED = 30, 3, 42

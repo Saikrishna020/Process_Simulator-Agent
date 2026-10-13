@@ -4,8 +4,8 @@ import json
 import pandas as pd
 import pytest
 
-from webapp.workbench.full_log import _intervals, extract
-from webapp.workbench.model import file_hash
+from processlab.extract.full_log import _intervals, extract
+from processlab.core.storage import file_hash
 
 
 def event(activity, transition, hour, resource=None):
@@ -64,7 +64,7 @@ def test_streaming_extraction_pairs_work_items_and_persists_provenance(tmp_path)
 def test_extraction_requires_a_timezone():
     from lxml import etree
 
-    from webapp.workbench.full_log import _events
+    from processlab.extract.full_log import _events
     trace = etree.fromstring(
         '<trace xmlns="http://www.xes-standard.org/"><string key="concept:name" value="one"/>'
         '<event><string key="concept:name" value="A_Create Application"/>'

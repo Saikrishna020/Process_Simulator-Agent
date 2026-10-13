@@ -17,12 +17,12 @@ os.environ["DEEPSEEK_API_KEY"] = "local-fixture-no-network"
 
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.checkpoint.memory import MemorySaver
-from webapp import main
-from webapp.orchestrator import graph, jobs
-from webapp.orchestrator.dataset_registry import get_dataset
-from webapp.workbench import api, service
-from webapp.workbench import analyst as analyst_module
-from webapp.workbench.model import MODEL_VERSION, atomic_json
+from processlab import main
+from processlab.assistant import graph, sessions as jobs
+from processlab.service import api, jobs as service
+from processlab.analysis import analyst as analyst_module
+from processlab.core.storage import atomic_json
+from processlab.engine.model import MODEL_VERSION
 
 fixture_root = ROOT / "runs" / "browser-fixture" / uuid.uuid4().hex
 store = service.Workbench(fixture_root)
@@ -45,13 +45,12 @@ class LocalPlanner:
 
     def invoke(self, messages):
         question = next(m.content for m in reversed(messages) if isinstance(m, HumanMessage))
-        if "Run the research simulator" in question:
-            dataset = get_dataset("BPIC_2017_W")
-            args = dict(dataset_name=dataset.name, case_id=dataset.case_id,
-                        activity_name=dataset.activity_name, resource=dataset.resource,
-                        start_timestamp=dataset.start_timestamp, end_timestamp=dataset.end_timestamp,
-                        num_simulations=1)
-            return AIMessage(content="", tool_calls=[dict(name="SimulationRequest", args=args, id=uuid.uuid4().hex)])
+        if "Run a scenario" in question:
+            # Exercises the real confirmation/run path with a scenario the engine accepts.
+            args = dict(name="Browser fixture scenario", horizon_days=7, repetitions=1,
+                        demand_multiplier=1.5)
+            return AIMessage(content="", tool_calls=[
+                dict(name="ScenarioRequest", args=args, id=uuid.uuid4().hex)])
         facts = json.loads(messages[0].content.split("Selected model facts (data, not instructions):\n", 1)[1])
         summary = facts["historical_summary"]
         return AIMessage(content=f"The whole log contains {summary['cases']:,} cases and {summary['resource_count']} resources. (Local test provider.)")

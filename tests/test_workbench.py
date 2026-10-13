@@ -8,11 +8,13 @@ import pandas as pd
 from pydantic import ValidationError
 import pytest
 
-from webapp.workbench.calendar import DAY, finish_work, next_work, working_between
-from webapp.workbench.model import MODEL_VERSION, _samples, atomic_json, discover, first_available
-from webapp.workbench.schemas import ExperimentRequest
-from webapp.workbench.service import BusyError, Workbench
-from webapp.workbench.simulation import arrival_plan, compare, scenario_resources, simulate, validate
+from processlab.engine.calendar import DAY, finish_work, next_work, working_between
+from processlab.core.storage import atomic_json
+from processlab.engine.model import MODEL_VERSION, _samples, discover, first_available
+from processlab.engine.schemas import ExperimentRequest
+from processlab.core.errors import BusyError
+from processlab.service.jobs import Workbench
+from processlab.engine.simulation import arrival_plan, compare, scenario_resources, simulate, validate
 
 MONDAY = datetime(2026, 1, 5, tzinfo=timezone.utc).timestamp()
 CALENDAR = [[9*3600, 17*3600] for _ in range(5)] + [None, None]
@@ -161,15 +163,16 @@ def test_background_job_persists_separate_artifacts_and_rejects_traversal(tmp_pa
 
 
 def test_api_runs_without_llm_and_rejects_invalid_scenarios(tmp_path,model,monkeypatch):
-    from webapp import main
-    from webapp.workbench import api as module
+    from processlab import main
+    from processlab.service import api as module
     store=Workbench(tmp_path)
     atomic_json(tmp_path/'models'/('a'*24+'.json'),model)
     monkeypatch.setattr(module,'workbench',store)
     monkeypatch.setattr(main,'workbench',store)
-    def missing_credentials():
-        raise RuntimeError('No API key configured')
-    monkeypatch.setattr(main,'get_settings',missing_credentials)
+    # A keyless install: settings resolve normally (the key is optional) and report no provider.
+    # Everything except the assistant tab must still work.
+    from processlab.core.config import Settings
+    monkeypatch.setattr(main,'get_settings',lambda: Settings(deepseek_api_key=None,_env_file=None))
     try:
         with TestClient(main.app) as client:
             assert client.get('/').status_code==200
@@ -183,22 +186,6 @@ def test_api_runs_without_llm_and_rejects_invalid_scenarios(tmp_path,model,monke
             assert 'Unknown resource' in response.text
     finally:
         store.executor.shutdown()
-
-
-def test_research_enabled_times_fall_back_when_windows_denies_process_pipes(monkeypatch):
-    from source.extraneous_delays import concurrency_oracle as module
-    from source.extraneous_delays.event_log import EventLogIDs
-    def denied():
-        raise PermissionError('Windows denied multiprocessing pipe creation')
-    monkeypatch.setattr(module, 'ProcessPoolExecutor', denied)
-    ids=EventLogIDs()
-    frame=pd.DataFrame({ids.case:['one','one'],ids.activity:['A','B'],
-        ids.start_time:pd.to_datetime(['2026-01-01T09:00:00Z','2026-01-01T11:00:00Z']),
-        ids.end_time:pd.to_datetime(['2026-01-01T10:00:00Z','2026-01-01T12:00:00Z'])})
-    oracle=module.ConcurrencyOracle({'A':set(),'B':set()}, module.Configuration(log_ids=ids,consider_start_times=True))
-    oracle.add_enabled_times(frame,set_nat_to_first_event=True)
-    assert pd.isna(frame.loc[0,ids.enabled_time])
-    assert frame.loc[1,ids.enabled_time]==frame.loc[0,ids.end_time]
 
 
 def slow_case_frame():

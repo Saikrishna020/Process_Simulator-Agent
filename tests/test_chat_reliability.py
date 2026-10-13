@@ -7,8 +7,9 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.checkpoint.memory import MemorySaver
 
-from webapp.orchestrator import jobs, graph
-from webapp.workbench.model import atomic_json, discover
+from processlab.assistant import sessions as jobs, graph
+from processlab.core.storage import atomic_json
+from processlab.engine.model import discover
 
 
 def test_windows_replace_retries_without_corrupting_visible_json(tmp_path, monkeypatch):
@@ -59,9 +60,10 @@ def test_duplicate_messages_and_unconfirmed_followups_are_rejected(monkeypatch):
 
 
 def test_model_questions_use_selected_history_without_starting_simulation(monkeypatch):
-    from webapp.workbench import service
+    from processlab.service import jobs as service
     model = dict(dataset="BPIC_2017_W", model_id="a" * 24,
                  explore={"cases": 31500, "resource_count": 149}, training_cases=24041,
+                 activities=[dict(name="Review", event_count=5)],
                  resources=[dict(id="r0", name="User_1", event_count=5, case_count=3,
                                  activities={"Review": {"samples": [999999]}})], assumptions=[])
     monkeypatch.setattr(service.workbench, "get_model", lambda _: model)
@@ -76,7 +78,7 @@ def test_model_questions_use_selected_history_without_starting_simulation(monkey
             return AIMessage(content="The whole log contains 31,500 cases and 149 resources.")
 
     monkeypatch.setattr(graph, "build_llm", lambda: LLM())
-    monkeypatch.setattr(graph.tools, "run_simulation", lambda *_: pytest.fail("Data question triggered simulation"))
+    monkeypatch.setattr(graph.tools, "run_scenario", lambda *_: pytest.fail("Data question triggered a simulation"))
     result = graph.build_graph(MemorySaver()).invoke(
         {"messages": [HumanMessage(content="How many cases?")], "model_id": "a" * 24},
         {"configurable": {"thread_id": "data-question"}})

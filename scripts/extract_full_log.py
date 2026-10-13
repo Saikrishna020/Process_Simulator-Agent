@@ -7,7 +7,7 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from webapp.workbench.full_log import extract
+from processlab.extract.full_log import extract
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)

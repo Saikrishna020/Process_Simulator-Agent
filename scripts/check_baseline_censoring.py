@@ -17,8 +17,8 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from webapp.workbench.schemas import ExperimentRequest  # noqa: E402
-from webapp.workbench.simulation import simulate  # noqa: E402
+from processlab.engine.schemas import ExperimentRequest  # noqa: E402
+from processlab.engine.simulation import simulate  # noqa: E402
 
 MODEL_ID = sys.argv[1] if len(sys.argv) > 1 else "95b66269d49a5e77a4db934b"
 FULL_FOLLOW_UP_DAYS = 75  # nearly every case (>99%) finishes well within this
@@ -35,7 +35,7 @@ def real_cases():
         log[column] = pd.to_datetime(log[column], utc=True, format="mixed")
     cases = log.groupby("case_id").agg(s=("start_timestamp", "min"), e=("end_timestamp", "max")).sort_values("s")
     cases["h"] = (cases.e - cases.s).dt.total_seconds() / 3600
-    cutoff = cases.iloc[int(len(cases) * .8)].s  # same rule as webapp/workbench/model.py
+    cutoff = cases.iloc[int(len(cases) * .8)].s  # same rule as processlab/engine/split.py
     return cases, cutoff, log.end_timestamp.max()
 
 

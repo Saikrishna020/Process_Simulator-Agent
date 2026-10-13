@@ -14,14 +14,15 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-          cache-dependency-path: requirements-ci.txt
+          cache-dependency-path: requirements.txt
       - name: Install dependencies
-        run: pip install -r requirements-ci.txt
-      - name: Check the UI script parses
-        run: node --check webapp/static/workbench.js
-      # The end-to-end LoanApp simulation takes ~2 minutes and needs the full research stack; run it locally.
+        run: pip install -r requirements.txt
+      - name: Check the UI scripts parse
+        run: |
+          node --check processlab/web/static/workbench.js
+          node --check processlab/web/static/analyst.js
+      # The whole suite runs in seconds now: the end-to-end scenario executes on Process Lab's
+      # own engine in-process, so nothing has to be deselected the way the old ~2-minute
+      # research-engine run did.
       - name: Run tests
-        run: >
-          python -m pytest -q
-          --deselect tests/test_tools.py::test_run_simulation_loanapp_end_to_end
-          --deselect tests/test_tools.py::test_evaluate_simulation_reuses_evaluate_run
+        run: python -m pytest -q

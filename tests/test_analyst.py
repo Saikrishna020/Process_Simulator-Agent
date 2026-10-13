@@ -7,9 +7,9 @@ import pandas as pd
 import pytest
 from pydantic import ValidationError
 
-from webapp.workbench.analyst import AnalysisPlan, AnalysisRequest, Analyst, DataCatalog, Intent, capabilities, execute, plan_question
-from webapp.workbench.model import atomic_json, file_hash
-from webapp.workbench.outcomes import case_outcome, extract
+from processlab.analysis.analyst import AnalysisPlan, AnalysisRequest, Analyst, DataCatalog, Intent, capabilities, execute, plan_question
+from processlab.core.storage import atomic_json, file_hash
+from processlab.extract.outcomes import case_outcome, extract
 
 
 def event(activity, hour, offer=None):
@@ -119,14 +119,14 @@ def test_catalog_reuses_frames_and_invalidates_changed_sources(store):
 
 
 def test_suggested_question_needs_no_llm(store,monkeypatch):
-    from webapp.orchestrator import llm
+    from processlab.core import llm
     monkeypatch.setattr(llm,'build_llm',lambda **_: pytest.fail('Preset must not call a provider'))
     intent=plan_question('Outcome distribution',capabilities(DataCatalog().load(store,'a'*24)))
     assert intent.plan.group_by=='outcome'
 
 
 def test_language_planner_sees_schema_and_query_but_not_records_or_results(store,monkeypatch):
-    from webapp.orchestrator import llm
+    from processlab.core import llm
     captured=[]
     class Planner:
         def with_structured_output(self,schema,method):
@@ -147,7 +147,7 @@ def test_language_planner_sees_schema_and_query_but_not_records_or_results(store
 
 
 def test_analyses_are_saved_recoverable_and_do_not_fabricate_predictions(store,monkeypatch):
-    from webapp.workbench import analyst as module
+    from processlab.analysis import analyst as module
     service=Analyst()
     monkeypatch.setattr(module,'plan_question',lambda *_:Intent(clarification='Prediction requires a separately validated outcome model.'))
     try:

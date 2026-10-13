@@ -86,7 +86,15 @@ try:
         shot("resources-desktop.png")
         js("document.querySelector('[data-view=explore]').click()")
         wait("document.querySelectorAll('#explore-content .stat').length === 4")
-        assert js("document.getElementById('explore-content').textContent.includes('31,500')")
+        # Compare against the model's own figure instead of a hardcoded number. This assertion
+        # used to hardcode 31,500 (the W_-only case count) and silently went stale when the
+        # explorer moved to the full application/offer/work-item log, which reports 31,509 —
+        # the nine applications with no work item at all still appear in the full log.
+        model_id = next(j["model_id"] for j in httpx.get(f"{args.base_url}/api/workbench/jobs").json()
+                        if j["kind"] == "discover" and j["status"] == "done")
+        model_cases = httpx.get(f"{args.base_url}/api/workbench/models/{model_id}").json()["explore"]["cases"]
+        assert js(f"document.getElementById('explore-content').textContent.includes('{model_cases:,}')"), \
+            f"the explorer should show the model's own case count ({model_cases:,})"
         assert js("document.querySelectorAll('#explore-content .month-bars i').length > 0")
         wait("document.querySelectorAll('[data-analysis-preset]').length >= 8 && !document.getElementById('analyst-ask').disabled")
         assert js("document.getElementById('analyst-summary').textContent.includes('185.4')")
@@ -106,9 +114,17 @@ try:
             js("document.getElementById('analyst-question').value='Predict the best solution'; document.getElementById('analyst-question-form').requestSubmit()")
             wait("!document.getElementById('analyst-ask').disabled")
             assert js("document.getElementById('analyst-status').textContent.includes('prediction model')")
-        js("document.querySelectorAll('[data-analysis-preset]')[8].click()")
+        # Pick the monthly-trend preset by name, not by position. This used to index [8], which
+        # silently stopped selecting the line chart when a tenth preset ("Outcome mix by
+        # resource") was inserted ahead of it, leaving the chart assertion testing a bar chart.
+        assert js("Array.from(document.querySelectorAll('[data-analysis-preset]'))"
+                  ".filter(b => b.textContent.includes('by month')).length === 1"), \
+            "expected exactly one monthly-trend preset"
+        js("Array.from(document.querySelectorAll('[data-analysis-preset]'))"
+           ".find(b => b.textContent.includes('by month')).click()")
         wait("!document.getElementById('analyst-ask').disabled")
-        assert js("document.querySelectorAll('.analyst-line').length === 1")
+        assert js("document.querySelectorAll('.analyst-line').length === 1"), \
+            "the monthly-trend preset should render exactly one line chart"
         call("Page.reload")
         wait("document.querySelectorAll('[data-analysis-history]').length >= 3")
         js("document.querySelector('[data-analysis-history]').click()")
@@ -126,13 +142,18 @@ try:
             assert js("document.getElementById('workspace').hidden")
             js("document.getElementById('assistant-input').value='How many cases and resources are in the whole selected log? Answer in one sentence.'; document.getElementById('assistant-composer').requestSubmit()")
             wait("!document.getElementById('assistant-input').disabled", 90)
-            assert js("document.querySelector('.msg.assistant').textContent.includes('31,500')")
-            assert js("document.querySelector('.msg.assistant').textContent.includes('149')")
+            # Again the model's own figures, not hardcoded ones: the assistant is handed the
+            # same explore summary the explorer renders, so this must track the full log.
+            model_resources = httpx.get(
+                f"{args.base_url}/api/workbench/models/{model_id}").json()["explore"]["resource_count"]
+            assert js(f"document.querySelector('.msg.assistant').textContent.includes('{model_cases:,}')"), \
+                f"the assistant should report the model's case count ({model_cases:,})"
+            assert js(f"document.querySelector('.msg.assistant').textContent.includes('{model_resources}')")
             assert js("document.querySelectorAll('.confirm-card').length === 0")
             call("Page.reload")
             wait("!document.getElementById('assistant-input').disabled")
             assert js("document.querySelectorAll('.msg.assistant').length === 1")
-            js("document.getElementById('assistant-input').value='Run the research simulator on BPIC_2017_W with 1 simulation.'; document.getElementById('assistant-composer').requestSubmit()")
+            js("document.getElementById('assistant-input').value='Run a scenario on BPIC_2017_W with 50% more demand.'; document.getElementById('assistant-composer').requestSubmit()")
             wait("document.querySelectorAll('.confirm-card').length === 1", 90)
             assert js("document.getElementById('assistant-input').disabled")
             shot("assistant-confirmation.png")
