@@ -98,7 +98,21 @@ The raw file `raw_data/bpi2017/BPI_Challenge_2017.xes` (578 MB) has **31,509 cas
 | `O_…` | 193,849 | **O**ffer *states* (created, sent, cancelled…) |
 | **`W_…`** | 768,823 | **W**ork items: manual tasks that a human resource performs |
 
-Only **W_** items describe *human work with durations*, which is what resource simulation needs, so `processlab/extract/full_log.py` keeps them. Crucially, XES stores each work item as **several lifecycle events** — `schedule` (149k), `start` (128k), `suspend` (215k), `resume` (127k), `complete` (475k), `ate_abort` (85k), `withdraw` (22k). The converter **pairs `start/resume → complete/suspend` into intervals**, ignoring `schedule/withdraw/ate_abort`, producing **254,382 intervals** with a real start and end. That is the flat 5-column CSV both engines consume.
+Only **W_** items describe *human work with durations*, which is what resource simulation needs, so `processlab/extract/work_items.py` keeps those and discards the rest. Crucially, XES stores each work item as **several lifecycle events**, and a row is a *state change*, not a task — so a duration only exists once the row where someone picked the task up is paired with the row where they put it down:
+
+| transition | `W_` events | meaning |
+| --- | ---: | --- |
+| `suspend` | 215,402 | put down — **the usual ending in this log** |
+| `schedule` | 149,104 | queued for someone; nobody has touched it |
+| `start` | 128,227 | picked up |
+| `resume` | 127,160 | picked up again |
+| `ate_abort` | 85,224 | abandoned |
+| `complete` | 41,862 | finished |
+| `withdraw` | 21,844 | cancelled before any work |
+
+The extractor **pairs `start`/`resume` → `complete`/`suspend` into intervals**, discarding `schedule`/`withdraw`/`ate_abort`, producing **254,382 intervals** with a real start and end. That is the flat 5-column CSV the engine consumes.
+
+Two things here catch people out. **`suspend` is the normal ending**, outnumbering `complete` five to one — treat `complete` as the only ending and you discard most of the measured work in the log. And **one activity can yield several intervals**: a task started, suspended, and resumed days later by a different person is two separate stretches of work, kept as two rows. (A note on a figure quoted elsewhere: `complete` appears 475,306 times across the *whole* log, but 433,444 of those are `A_` and `O_` events, which carry no other transition. Among `W_` events it occurs only 41,862 times.)
 
 The eight activities (interval counts): `W_Validate application` 72,937 · `W_Call incomplete files` 62,260 · `W_Call after offers` 60,560 · `W_Complete application` 52,321 · `W_Handle leads` 4,891 · `W_Assess potential fraud` 1,323 · `W_Shortened completion` 81 · `W_Personal Loan collection` 9.
 

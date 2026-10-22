@@ -1,13 +1,13 @@
 """Extract the whole BPI 2017 event log — application (A_*) and offer (O_*) events alongside
 the work items (W_*) — for Data Explorer's descriptive charts only.
 
-The simulator's resource-capacity model (webapp/workbench/model.py: discover()) continues to
-read only the W_ work-item CSV unchanged: A_/O_ events carry no observed duration (a single
-'complete' transition, never a 'start'), so they cannot teach processing time or calendars.
-Mixing them into the simulation model would silently corrupt it. This extraction exists purely
-to let the "what does the history say" overview describe the whole process BPI 2017 asks about
-(applications and offers, not just human work items), matching webapp/workbench/outcomes.py's
-separate, explicit, non-destructive extraction for case outcomes.
+The simulator's resource-capacity model (engine/model.py: discover()) continues to read only
+the W_ work-item CSV unchanged (see extract/work_items.py): A_/O_ events carry no observed
+duration (a single 'complete' transition, never a 'start'), so they cannot teach processing
+time or calendars. Mixing them into the simulation model would silently corrupt it. This
+extraction exists purely to let the "what does the history say" overview describe the whole
+process BPI 2017 asks about (applications and offers, not just human work items), matching
+extract/outcomes.py's separate, explicit, non-destructive extraction for case outcomes.
 """
 from collections import defaultdict, deque
 from datetime import datetime, timezone
@@ -18,6 +18,7 @@ import gzip
 from lxml import etree
 
 from ..core.storage import atomic_json, file_hash
+from .lifecycle import CLOSES, OPENS
 
 VERSION = 1
 
@@ -44,16 +45,18 @@ def _events(trace):
 def _intervals(events):
     """W_ work items carry start/complete (or resume/suspend) lifecycles with a real duration.
     Every other activity (A_*, O_*, ...) is recorded as a single 'complete' event with no
-    matching start and has no observed duration — reported as instantaneous (start == end),
-    the same convention xes_to_csv.py uses for lifecycle-less events."""
+    matching start and has no observed duration — reported as instantaneous (start == end).
+
+    The pairing rule is the same one extract/work_items.py applies; both take the transition
+    vocabulary from extract/lifecycle.py so the two cannot drift apart."""
     pending = defaultdict(deque)
     rows = []
     for name, transition, ts, resource in sorted(events, key=lambda e: e[2]):
         if not name.startswith("W_"):
             rows.append((name, resource, ts, ts))
-        elif transition in ("start", "resume"):
+        elif transition in OPENS:
             pending[name].append((ts, resource))
-        elif transition in ("complete", "suspend"):
+        elif transition in CLOSES:
             if pending[name]:
                 start_ts, start_resource = pending[name].popleft()
                 rows.append((name, resource or start_resource, start_ts, ts))

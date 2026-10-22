@@ -278,17 +278,33 @@ python scripts/diagnose_baseline_gap.py       # the outlier analysis
 | In the product? | **Yes** | Disabled, with a stated reason | No — test fixture only |
 
 The raw BPI 2017 XES is 578 MB and 1.2M events in three families: `A_*` application states, `O_*`
-offer states and `W_*` work items. Only `W_*` are human work with durations, and XES stores each as
-several lifecycle events (`schedule`, `start`, `suspend`, `resume`, `complete`, …). The converter
-**pairs `start`/`resume` → `complete`/`suspend` into intervals**, discarding the rest, streaming the
-whole file at constant memory → 254,382 real intervals.
+offer states and `W_*` work items. Only `W_*` are human work with durations.
+
+**A row in an XES log is a state change, not a task.** Each work item is stored as several lifecycle
+rows, so a duration only exists once the row where someone picked the task up is paired with the row
+where they put it down. `extract/work_items.py` **pairs `start`/`resume` → `complete`/`suspend` into
+intervals**, discards `schedule`/`withdraw`/`ate_abort`, and streams the whole file at constant
+memory → 254,382 intervals. Two details worth knowing: `suspend` is the *usual* ending here
+(215,402 against 41,862 `complete`s), and one activity can yield several intervals, because a task
+suspended and resumed days later by someone else is two separate stretches of work.
+
+```powershell
+python scripts/extract_work_items.py raw_data/bpi2017/BPI_Challenge_2017.xes raw_data/BPIC_2017_W.csv
+```
+
+**Re-extraction is byte-identical.** Timestamps are written back verbatim and parsed only to order
+events, so re-running this on an unchanged log reproduces the same file, the same hash, and
+therefore the same model id and the same cached model. Reformatting them would orphan every cached
+model and silently shift every published number, so a test regenerates the shipped CSV from the raw
+log and compares it byte for byte (`pytest -m slow`, a minute, needs the XES).
 
 Two further extractions are kept deliberately separate from the simulation model:
 `extract/outcomes.py` (case outcomes, rework, offers, customer response time) and
 `extract/full_log.py` (all three families, for the explorer's charts). `discover()` takes the full
 log as an **optional, descriptive-only** argument — it never touches resource profiles, calendars,
 templates or arrival days, so the capacity model is unaffected by whether a full log exists. A test
-enforces that.
+enforces that. All three extractors take their transition vocabulary from `extract/lifecycle.py`,
+so the pairing rule is defined once and cannot drift between them.
 
 **BPI 2019 is kept as a data-quality lesson.** Every event is zero-duration, 25% have resource
 `NONE`, and timestamps reach back to 1948. Without durations you cannot learn how long someone takes
@@ -348,7 +364,7 @@ Interrupted jobs are marked as errors on restart and can be resubmitted.
   comparison budget, and explicit size caps.
 - Defence in depth on outputs: regex-validated job ids and filenames, bounded repetition indices,
   and `public_model()` stripping samples and templates from anything served over HTTP.
-- **76 tests, green in under seven seconds**, run by GitHub Actions on every push, and verified in a
+- **96 tests, green in under ten seconds**, run by GitHub Actions on every push, and verified in a
   clean environment built only from `requirements.txt`. The assistant is tested against a scripted
   fake LLM: full routing coverage, no provider calls, no cost.
 - **Tests that pass can still be lying.** Three browser assertions here were silently green while
