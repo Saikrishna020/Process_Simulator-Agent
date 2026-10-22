@@ -34,11 +34,12 @@ a Dutch bank's lending process.
 
 1. **A typical case takes 19.1 days but needs only ~25 minutes of hands-on work** — 0.5% of
    elapsed time. The rest is waiting.
-2. **Most waiting is not a staffing problem.** About 78% of simulated cycle time is external
-   delay (customer callbacks, documents); ~21% is queueing; processing is ~1%. Simulated
+2. **Most simulated waiting is residual delay.** About 78% of simulated cycle time is residual
+   delay (unobserved causes); ~21% is pre-start waiting. Processing and off-shift pauses account
+   for the remainder. These shares depend on run settings. Simulated
    utilisation is ~6%.
 3. **Adding or removing people barely moves cycle time.** Removing the busiest person: −0.2%.
-   Adding three copies of them: −0.2%. Halving all external delays: **−37%**.
+   Adding three copies of them: −0.2%. Halving all residual delays: **−37%**.
 4. **How work is allocated does matter.** Sending each task to the earliest available qualified
    person instead of the historically preferred one cuts queue wait by 96% (61 h → 2 h) and
    cycle time by ~18%. This is an upper bound — the log cannot show real skill or approval limits.
@@ -46,8 +47,9 @@ a Dutch bank's lending process.
    cancellation with a median cycle time of 31.6 days, versus 14.8 (approved) and 14.1 (denied).
    The median wait for a customer to respond to an offer is 185 hours (~7.7 days).
 
-The short version: **this process is a ~25-minute job that takes three weeks, and you cannot fix
-it by hiring.** The levers that move it are the waiting between steps and the way work is routed.
+The short version: **this process is a ~25-minute job that takes three weeks, and
+the tested staffing changes barely improve it in this model.** The levers that move it are
+the waiting between steps and the way work is routed; these are not causal staffing forecasts.
 
 Every one of these is reproducible live in the app — **Data explorer → Data Analyst**, where the
 preset questions run locally with no API key.
@@ -93,6 +95,11 @@ person's calendar (pausing at shift end and weekends), release them, schedule th
 strands an activity), change a resource's speed or hours, scale an activity's processing time or
 its residual delay, scale demand (25–300%), set horizon (7–90 days), repetitions (1–10), deadline,
 seed and allocation rule.
+
+The Results tab reports a complete time breakdown: processing, queue/off-shift waiting before
+a task starts, off-shift pauses during a task, and residual delay. These components sum to
+mean case duration. Residual delay has unknown causes; it is not measured customer waiting.
+See [the engine review](docs/ENGINE_REVIEW.md) for corrections to the study guide.
 
 **Caps:** ≤50 added resources, ≤30,000 cases / 300,000 events per repetition, a 15-minute budget,
 one background job at a time, and a backlog beyond five years is rejected rather than spun on.
@@ -198,7 +205,7 @@ Say these first; they make the rest credible.
 
 - **Not a forecast.** Against a censoring-corrected reference the baseline is **+12% mean, +3%
   median, +18% p90**. Use it to *compare scenarios*, not to predict days.
-- **One task at a time per resource** — yet **15.4%** of real BPI 2017 work items overlap. The app
+- **One task at a time per resource** — yet **15.9%** of training work items overlap. The app
   reports that overlap so the assumption stays visible. No batching, fatigue or learning curves.
 - **No parallel branches within a case**, and process steps cannot be added or removed — only
   resources, times, delays, demand and routing.
@@ -364,8 +371,8 @@ Interrupted jobs are marked as errors on restart and can be resubmitted.
   comparison budget, and explicit size caps.
 - Defence in depth on outputs: regex-validated job ids and filenames, bounded repetition indices,
   and `public_model()` stripping samples and templates from anything served over HTTP.
-- **96 tests, green in under ten seconds**, run by GitHub Actions on every push, and verified in a
-  clean environment built only from `requirements.txt`. The assistant is tested against a scripted
+- **97 tests passing in the local review**, with the suite configured to run in GitHub Actions
+  on every push using `requirements.txt`. The assistant is tested against a scripted
   fake LLM: full routing coverage, no provider calls, no cost.
 - **Tests that pass can still be lying.** Three browser assertions here were silently green while
   checking the wrong things — two compared against a hardcoded case count the app had outgrown, and

@@ -217,11 +217,12 @@ function renderScorePanel() {
 }
 async function runScore() {
   const button = $('run-score'), output = $('score-output');
-  if (!button || !state.model) return;
+  if (!button || !state.result) return;
+  const modelId = state.result.model_id;
   button.disabled = true;
   output.innerHTML = '<p class="subtle"><span class="spinner"></span> Running baseline repetitions and scoring…</p>';
   try {
-    const score = await api(`/models/${state.model.model_id}/score?repetitions=2`);
+    const score = await api(`/models/${modelId}/score?repetitions=2`, {signal: AbortSignal.timeout(900000)});
     const ref = score.reference;
     const rows = Object.entries(score.metrics).map(([code, m]) => `<tr>
       <td><strong>${esc(code)}</strong></td>
@@ -237,6 +238,17 @@ async function runScore() {
   } finally {
     button.disabled = false;
   }
+}
+function renderTimeBreakdown(metrics) {
+  const components = [
+    ['mean_processing_hours', 'Processing'],
+    ['mean_wait_hours', 'Queue & off-shift wait before starting'],
+    ['mean_calendar_pause_hours', 'Off-shift pauses during tasks'],
+    ['mean_residual_delay_hours', 'Residual delay']
+  ];
+  if (!components.every(([key]) => metrics[key])) return '<p class="result-note">Run this comparison again to see the complete time breakdown; this saved result predates calendar-pause reporting.</p>';
+  const row = (key, label) => `<tr><td>${label}</td>${['baseline', 'scenario'].map(side => `<td>${fmt(metrics[key][side].mean, 2)} h</td><td>${fmt(metrics.mean_cycle_hours[side].mean ? 100 * metrics[key][side].mean / metrics.mean_cycle_hours[side].mean : 0, 2)}%</td>`).join('')}</tr>`;
+  return `<section class="card padded time-breakdown"><h2>Where case time goes</h2><p class="subtle">Mean hours per arrived case, through completion. Residual delay has unknown causes; it is not a measured customer delay.</p><div class="table-wrap"><table><thead><tr><th>Component</th><th>Baseline</th><th>Share</th><th>Scenario</th><th>Share</th></tr></thead><tbody>${components.map(([key, label]) => row(key, label)).join('')}${row('mean_cycle_hours', 'Total case duration')}</tbody></table></div><p class="field-help">Processing + pre-start wait + off-shift pauses + residual delay = total duration (before rounding).</p></section>`;
 }
 function renderResults() {
   const r = state.result, comparison = r.comparison;
@@ -255,6 +267,7 @@ function renderResults() {
     <div class="legend"><span><i></i>Historical baseline</span><span><i class="green"></i>Your scenario</span></div><div class="result-cards">${cards}</div>
     <div class="result-note">${fmt(m.active_resources.baseline.mean,0)} → ${fmt(m.active_resources.scenario.mean,0)} active resources. ${fmt(m.arrived_cases.baseline.mean,0)} → ${fmt(m.arrived_cases.scenario.mean,0)} arrivals on average. Durations and deadline compliance include every arrived case, including those finishing after the horizon. Utilization and throughput cover only the selected horizon. Ranges show repetition variability, not confidence intervals.</div>
     <div class="results-grid"><section class="card padded"><h2>Where cases wait</h2><p class="subtle">Mean queue and calendar wait per activity instance, in hours.</p>${bars}</section><section class="card"><div class="padded"><h2>Resource utilization</h2><p class="subtle">Working time occupied ÷ scheduled capacity within the horizon.</p></div><div class="table-wrap" style="max-height:450px;overflow:auto"><table><thead><tr><th>Resource</th><th>Baseline</th><th>Scenario</th></tr></thead><tbody>${resourceRows}</tbody></table></div></section></div>
+    ${renderTimeBreakdown(m)}
     ${renderValidation(r)}
     <details class="result-details"><summary>All metrics & paired differences</summary><div class="table-wrap"><table><thead><tr><th>Metric</th><th>Baseline mean</th><th>Scenario mean</th><th>Paired difference range</th></tr></thead><tbody>${Object.entries(m).map(([k,v])=>`<tr><td>${esc(k.replaceAll('_',' '))}</td><td>${fmt(v.baseline.mean)}</td><td>${fmt(v.scenario.mean)}</td><td>${fmt(v.delta.min)} to ${fmt(v.delta.max)}</td></tr>`).join('')}</tbody></table></div></details>
     <section class="card padded" style="margin-top:22px"><h3>Take the results with you</h3><p class="subtle">Every repetition has separate event logs. The JSON includes all settings, seeds, model identity and assumptions.</p><div class="download-row"><a href="/api/workbench/experiments/${r.id}/files/result.json" download>↓ Full comparison JSON</a><label><span class="subtle">Repetition </span><select id="export-repetition" aria-label="Export repetition">${Array.from({length:r.request.repetitions},(_,i)=>`<option value="${i+1}">${i+1}</option>`).join('')}</select></label><a id="baseline-download" download>↓ Baseline CSV</a><a id="scenario-download" download>↓ Scenario CSV</a></div></section>`;

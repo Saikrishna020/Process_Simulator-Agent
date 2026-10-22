@@ -49,6 +49,23 @@ def test_empirical_samples_do_not_overweight_the_maximum():
     assert samples.count(1000) == 1
 
 
+def test_cycle_breakdown_includes_pauses_and_residual_delay(model):
+    model['arrival_days'] = [[[16*3600]]] + [[[]] for _ in range(6)]
+    model['resources'][0]['activities']['Review']['samples'] = [3*3600]
+    model['templates'] = [[['Review', 'r0', 0], ['Review', 'r0', 2*3600]]]
+    run, events = simulate(model, request(), 42)
+    metrics = run['metrics']
+    assert metrics['mean_processing_hours'] == 6
+    assert metrics['mean_calendar_pause_hours'] == 16
+    assert metrics['mean_residual_delay_hours'] == 2
+    assert metrics['mean_cycle_hours'] == 24
+    assert sum(metrics[k] for k in ['mean_processing_hours', 'mean_wait_hours',
+                                   'mean_calendar_pause_hours', 'mean_residual_delay_hours']) == pytest.approx(metrics['mean_cycle_hours'])
+    for event in events:
+        assert event['end_timestamp'] - event['ready_timestamp'] == pytest.approx(
+            event['processing_seconds'] + event['queue_seconds'] + event['calendar_pause_seconds'])
+
+
 def test_delay_uses_first_idle_window_not_the_last_completion():
     intervals = ([MONDAY+9*3600, MONDAY+13*3600], [MONDAY+10*3600, MONDAY+14*3600])
     assert first_available(MONDAY+9*3600, MONDAY+15*3600, CALENDAR, intervals) == MONDAY+10*3600

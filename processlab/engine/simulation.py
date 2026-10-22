@@ -99,6 +99,8 @@ def simulate(model: dict, request: ExperimentRequest, seed: int, *, baseline=Fal
     events, cycles = [], []
     case_wait = [0.0] * len(plan)
     case_delay = [0.0] * len(plan)
+    case_work = [0.0] * len(plan)
+    case_pause = [0.0] * len(plan)
     resource_work = defaultdict(float)
     resource_events = defaultdict(int)
     activity_wait = defaultdict(list)
@@ -131,6 +133,10 @@ def simulate(model: dict, request: ExperimentRequest, seed: int, *, baseline=Fal
         available[rid] = end
         wait = start - ready
         case_wait[case_index] += wait
+        # Off-shift pauses after starting are neither processing nor pre-start wait.
+        pause = max(0.0, end - start - work)
+        case_work[case_index] += work
+        case_pause[case_index] += pause
         resource_work[rid] += working_between(start, min(end, horizon), resource["calendar"])
         if start < horizon:
             resource_events[rid] += 1
@@ -142,6 +148,7 @@ def simulate(model: dict, request: ExperimentRequest, seed: int, *, baseline=Fal
         events.append(dict(case_id=case["case_id"], activity=activity, resource_id=rid, resource=resource["name"],
                            arrival_timestamp=case["arrival"], ready_timestamp=ready, start_timestamp=start,
                            end_timestamp=end, processing_seconds=work, queue_seconds=wait,
+                           calendar_pause_seconds=pause,
                            residual_delay_seconds=delay * (change.delay_multiplier if change else 1)))
         if task_index + 1 == len(tasks):
             cycles.append((end - case["arrival"]) / 3600)
@@ -157,6 +164,7 @@ def simulate(model: dict, request: ExperimentRequest, seed: int, *, baseline=Fal
         throughput_per_day=completed / request.horizon_days, mean_cycle_hours=float(np.mean(cycles)),
         median_cycle_hours=float(np.median(cycles)), p90_cycle_hours=float(np.quantile(cycles, .9)),
         mean_wait_hours=float(np.mean(case_wait) / 3600), mean_residual_delay_hours=float(np.mean(case_delay) / 3600),
+        mean_processing_hours=float(np.mean(case_work) / 3600), mean_calendar_pause_hours=float(np.mean(case_pause) / 3600),
         sla_met_pct=100 * sum(c <= request.sla_hours for c in cycles) / len(cycles),
         utilization_pct=100 * sum(resource_work.values()) / total_capacity if total_capacity else 0,
         active_resources=len(resources))

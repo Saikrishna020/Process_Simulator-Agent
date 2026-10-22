@@ -177,15 +177,39 @@ try:
         js("document.getElementById('scenario-form').requestSubmit()")
         wait("!document.getElementById('view-results').hidden && !document.getElementById('results-content').hidden", 90)
         assert js("document.querySelectorAll('.result-card').length") == 6
+        assert js("document.querySelectorAll('.time-breakdown tbody tr').length") == 5
+        assert js("['baseline','scenario'].every(side => Math.abs(['mean_processing_hours','mean_wait_hours','mean_calendar_pause_hours','mean_residual_delay_hours'].reduce((sum,key) => sum + state.result.comparison.metrics[key][side].mean, 0) - state.result.comparison.metrics.mean_cycle_hours[side].mean) < 0.000001)")
+        # An old result remains readable but must not invent missing components.
+        assert js("renderTimeBreakdown({}).includes('predates calendar-pause reporting')")
+        # Score the displayed result even if a different model is currently selected.
+        # A response after 21 s also catches the former generic 20 s timeout.
+        js("""window.originalModel = state.model; window.originalFetch = window.fetch;
+          state.model = {...state.model, model_id: 'b'.repeat(24)};
+          window.fetch = (url, options) => {
+            window.scoredUrl = String(url);
+            return new Promise((resolve, reject) => {
+              options.signal.addEventListener('abort', () => reject(new Error('Scoring timed out')), {once:true});
+              setTimeout(() => resolve(new Response(JSON.stringify({metrics:{CTDD:{mean:1,std:0,informative:true,question:'Case durations'}},reference:{real_cases:1,held_out_cases_total:1,real_events:1,horizon_days:7},runs:2,caveats:['Browser regression fixture']}), {status:200})), 21000);
+            });
+          };
+          document.getElementById('run-score').click();""")
+        wait("!document.getElementById('run-score').disabled", 35)
+        assert js("window.scoredUrl.includes('/models/' + state.result.model_id + '/score')")
+        assert js("document.getElementById('score-output').textContent.includes('Browser regression fixture')")
+        js("state.model = window.originalModel; window.fetch = window.originalFetch; renderResults()")
         assert js("document.getElementById('notice').hidden")
         download = js("document.getElementById('scenario-download').href")
         response = httpx.get(download, timeout=10)
-        assert response.status_code == 200 and "queue_seconds" in response.text.splitlines()[0]
+        assert response.status_code == 200 and "calendar_pause_seconds" in response.text.splitlines()[0]
         shot("results-desktop.png")
         js("document.querySelector('[data-view=history]').click()")
         wait("document.querySelectorAll('[data-result]').length>0")
         js("document.querySelector('[data-view=resources]').click()")
         call("Emulation.setDeviceMetricsOverride", dict(width=390, height=844, deviceScaleFactor=1, mobile=True))
+        js("document.querySelector('[data-view=results]').click()")
+        assert js("document.documentElement.scrollWidth <= window.innerWidth+1")
+        shot("results-mobile.png")
+        js("document.querySelector('[data-view=resources]').click()")
         assert js("document.documentElement.scrollWidth <= window.innerWidth+1")
         shot("resources-mobile.png")
         js("document.querySelector('[data-view=explore]').click()")
